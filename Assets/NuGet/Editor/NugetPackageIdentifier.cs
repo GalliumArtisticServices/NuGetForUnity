@@ -18,6 +18,12 @@
         public string Version;
 
         /// <summary>
+        /// Directory to install package to. 
+        /// 6/11/19 - We don't want a version number or any other identifier so it's just the id.
+        /// </summary>
+        public string InstallDir { get { return Id; } }
+
+        /// <summary>
         /// Gets a value indicating whether this is a prerelease package or an official release package.
         /// </summary>
         public bool IsPrerelease { get { return Version.Contains("-"); } }

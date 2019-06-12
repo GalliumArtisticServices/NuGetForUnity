@@ -51,10 +51,10 @@ namespace NugetForUnity
             foreach (var entry in packageEntries)
             {
                 NugetPackage package = new NugetPackage();
-                package.Id = entry.GetAtomElement("title").Value;
                 package.DownloadUrl = entry.GetAtomElement("content").Attribute("src").Value;
 
                 var entryProperties = entry.Element(XName.Get("properties", MetaDataNamespace));
+                package.Id = entryProperties.GetProperty("Id");
                 package.Title = entryProperties.GetProperty("Title");
                 package.Version = entryProperties.GetProperty("Version");
                 package.Description = entryProperties.GetProperty("Description");

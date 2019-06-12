@@ -291,7 +291,7 @@
         /// <param name="package">The NugetPackage to clean.</param>
         private static void Clean(NugetPackageIdentifier package)
         {
-            string packageInstallDirectory = Path.Combine(NugetConfigFile.RepositoryPath, string.Format("{0}.{1}", package.Id, package.Version));
+            string packageInstallDirectory = Path.Combine(NugetConfigFile.RepositoryPath, package.InstallDir);
 
             LogVerbose("Cleaning {0}", packageInstallDirectory);
 
@@ -713,10 +713,10 @@
             PackagesConfigFile.RemovePackage(package);
             PackagesConfigFile.Save(PackagesConfigFilePath);
 
-            string packageInstallDirectory = Path.Combine(NugetConfigFile.RepositoryPath, string.Format("{0}.{1}", package.Id, package.Version));
+            string packageInstallDirectory = Path.Combine(NugetConfigFile.RepositoryPath, package.InstallDir);
             DeleteDirectory(packageInstallDirectory);
 
-            string metaFile = Path.Combine(NugetConfigFile.RepositoryPath, string.Format("{0}.{1}.meta", package.Id, package.Version));
+            string metaFile = Path.Combine(NugetConfigFile.RepositoryPath, package.InstallDir);
             DeleteFile(metaFile);
 
             string toolsInstallDirectory = Path.Combine(Application.dataPath, string.Format("../Packages/{0}.{1}", package.Id, package.Version));
@@ -1168,7 +1168,7 @@
 
                 if (File.Exists(cachedPackagePath))
                 {
-                    string baseDirectory = Path.Combine(NugetConfigFile.RepositoryPath, string.Format("{0}.{1}", package.Id, package.Version));
+                    string baseDirectory = Path.Combine(NugetConfigFile.RepositoryPath, package.InstallDir);
 
                     // unzip the package
                     using (ZipFile zip = ZipFile.Read(cachedPackagePath))
@@ -1185,7 +1185,7 @@
                     }
 
                     // copy the .nupkg inside the Unity project
-                    File.Copy(cachedPackagePath, Path.Combine(NugetConfigFile.RepositoryPath, string.Format("{0}.{1}/{0}.{1}.nupkg", package.Id, package.Version)), true);
+                    File.Copy(cachedPackagePath, Path.Combine(NugetConfigFile.RepositoryPath, string.Format("{0}/{1}.{2}.nupkg", package.InstallDir, package.Id, package.Version)), true);
                 }
                 else
                 {
@@ -1371,20 +1371,26 @@
             var directories = Directory.GetDirectories(NugetConfigFile.RepositoryPath, "*", SearchOption.TopDirectoryOnly);
             foreach (var folder in directories)
             {
-                var name = Path.GetFileName(folder);
                 var installed = false;
-                foreach (var package in PackagesConfigFile.Packages)
+
+                var files = Directory.GetFiles(folder, "*.nupkg");
+                if (files.Length > 0)
                 {
-                    var packageName = string.Format("{0}.{1}", package.Id, package.Version);
-                    if (name == packageName)
+                    var name = Path.GetFileName(files[0]);
+                    foreach (var package in PackagesConfigFile.Packages)
                     {
-                        installed = true;
-                        break;
+                        var packageName = string.Format("{0}.{1}.nupkg", package.Id, package.Version);
+                        if (name == packageName)
+                        {
+                            installed = true;
+                            break;
+                        }
                     }
                 }
+
                 if (!installed)
                 {
-                    LogVerbose("---DELETE unnecessary package {0}", name);
+                    LogVerbose("---DELETE unnecessary package {0}", Path.GetFileName(folder));
 
                     DeleteDirectory(folder);
                     DeleteFile(folder + ".meta");
