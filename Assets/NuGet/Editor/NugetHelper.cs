@@ -1176,10 +1176,56 @@
                         foreach (ZipEntry entry in zip)
                         {
                             entry.Extract(baseDirectory, ExtractExistingFileAction.OverwriteSilently);
+                            string filePath = Path.Combine(baseDirectory, entry.FileName);
                             if (NugetConfigFile.ReadOnlyPackageFiles)
                             {
-                                FileInfo extractedFile = new FileInfo(Path.Combine(baseDirectory, entry.FileName));
+                                FileInfo extractedFile = new FileInfo(filePath);
                                 extractedFile.Attributes |= FileAttributes.ReadOnly;
+                            }
+
+                            if(Path.GetExtension(entry.FileName) == ".dll")
+                            {
+                                using(MD5 md5 = MD5.Create())
+                                {
+                                    string fileName = Path.GetFileNameWithoutExtension(entry.FileName);
+                                    Guid guid = new Guid(md5.ComputeHash(Encoding.Default.GetBytes(fileName)));
+                                    File.WriteAllText(filePath + ".meta",
+@"fileFormatVersion: 2
+guid: GUID
+PluginImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  iconMap: {}
+  executionOrder: {}
+  defineConstraints: []
+  isPreloaded: 0
+  isOverridable: 0
+  isExplicitlyReferenced: 0
+  validateReferences: 1
+  platformData:
+  - first:
+      Any: 
+    second:
+      enabled: 1
+      settings: {}
+  - first:
+      Editor: Editor
+    second:
+      enabled: 0
+      settings:
+        DefaultValueInitialized: true
+  - first:
+      Windows Store Apps: WindowsStoreApps
+    second:
+      enabled: 0
+      settings:
+        CPU: AnyCPU
+  userData: 
+  assetBundleName: 
+  assetBundleVariant:".Replace("GUID", guid.ToString("N")));
+                                }
+
+
                             }
                         }
                     }

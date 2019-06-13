@@ -19,9 +19,9 @@
 
         /// <summary>
         /// Directory to install package to. 
-        /// 6/11/19 - We don't want a version number or any other identifier so it's just the id.
+        /// 6/12/19 - Back to using version number because it turns out that wasn't the issue
         /// </summary>
-        public string InstallDir { get { return Id; } }
+        public string InstallDir { get { return string.Format("{0}.{1}", Id, Version); } }
 
         /// <summary>
         /// Gets a value indicating whether this is a prerelease package or an official release package.
