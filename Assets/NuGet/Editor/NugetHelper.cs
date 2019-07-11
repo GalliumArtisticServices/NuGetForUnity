@@ -13,6 +13,7 @@
     using Debug = UnityEngine.Debug;
     using System.Security.Cryptography;
     using System.Text.RegularExpressions;
+    using System.Xml.Linq;
 
     /// <summary>
     /// A set of helper methods that act as a wrapper around nuget.exe
@@ -24,6 +25,9 @@
     [InitializeOnLoad]
     public static class NugetHelper
     {
+        const string kGlobalConfigPathConfig = ".config/NuGet/NuGet.Config";
+        const string kGlobalConfigPathNuget = ".nuget/NuGet/NuGet.Config";
+
         /// <summary>
         /// The path to the nuget.config file.
         /// </summary>
@@ -172,6 +176,34 @@
                 else
                 {
                     packageSources.Add(NugetConfigFile.ActivePackageSource);
+                }
+
+                // Add packages from global NuGet config
+                string userPath = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+
+                string globalConfigPathConfig = Path.Combine(userPath, kGlobalConfigPathConfig);
+                string globalConfigPathNuget = Path.Combine(userPath, kGlobalConfigPathNuget);
+
+                string globalConfigPath = File.Exists(globalConfigPathConfig) ? globalConfigPathConfig : (File.Exists(globalConfigPathNuget) ? globalConfigPathNuget : "");
+
+                if (!string.IsNullOrEmpty(globalConfigPath))
+                {
+                    XDocument globalFile = XDocument.Load(globalConfigPath);
+                    XElement globalPackageSources = globalFile.Root.Element("packageSources");
+                    if (globalPackageSources != null)
+                    {
+                        var adds = globalPackageSources.Elements("add");
+                        foreach (var add in adds)
+                        {
+                            if (!packageSources.Exists(p => p.Name == add.Attribute("key" ).Value))
+                            {
+                                NugetPackageSource newSource = new NugetPackageSource(add.Attribute("key").Value, add.Attribute("value").Value);
+                                newSource.IsEnabled = true;
+
+                                packageSources.Add(newSource);
+                            }
+                        }
+                    }
                 }
             }
         }
