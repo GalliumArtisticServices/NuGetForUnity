@@ -25,8 +25,8 @@
     [InitializeOnLoad]
     public static class NugetHelper
     {
-        const string kGlobalConfigPathConfig = ".config/NuGet/NuGet.Config";
-        const string kGlobalConfigPathNuget = ".nuget/NuGet/NuGet.Config";
+        const string GLOBAL_CONFIG_PATH_CONFIG = ".config/NuGet/NuGet.Config";
+        const string GLOBAL_CONFIG_PATH_NUGET = ".nuget/NuGet/NuGet.Config";
 
         /// <summary>
         /// The path to the nuget.config file.
@@ -181,8 +181,8 @@
                 // Add packages from global NuGet config
                 string userPath = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
 
-                string globalConfigPathConfig = Path.Combine(userPath, kGlobalConfigPathConfig);
-                string globalConfigPathNuget = Path.Combine(userPath, kGlobalConfigPathNuget);
+                string globalConfigPathConfig = Path.Combine(userPath, GLOBAL_CONFIG_PATH_CONFIG);
+                string globalConfigPathNuget = Path.Combine(userPath, GLOBAL_CONFIG_PATH_NUGET);
 
                 string globalConfigPath = File.Exists(globalConfigPathConfig) ? globalConfigPathConfig : (File.Exists(globalConfigPathNuget) ? globalConfigPathNuget : "");
 
