@@ -100,11 +100,7 @@
                 return;
             }
 
-#if UNITY_5_6_OR_NEWER
             DotNetVersion = PlayerSettings.GetApiCompatibilityLevel(EditorUserBuildSettings.selectedBuildTargetGroup);
-#else
-            DotNetVersion = PlayerSettings.apiCompatibilityLevel;
-#endif
 
             // Load the NuGet.config file
             LoadNugetConfigFile();
@@ -353,7 +349,9 @@
 
             if (Directory.Exists(packageInstallDirectory + "/lib"))
             {
-                int intDotNetVersion = (int)DotNetVersion; // c
+                ApiCompatibilityLevel dotNetVersion = PlayerSettings.GetApiCompatibilityLevel(EditorUserBuildSettings.selectedBuildTargetGroup);
+
+                int intDotNetVersion = (int)dotNetVersion; // c
                 //bool using46 = DotNetVersion == ApiCompatibilityLevel.NET_4_6; // NET_4_6 option was added in Unity 5.6
                 bool using46 = intDotNetVersion == 3; // NET_4_6 = 3 in Unity 5.6 and Unity 2017.1 - use the hard-coded int value to ensure it works in earlier versions of Unity
                 bool usingStandard2 = intDotNetVersion == 6; // using .net standard 2.0                
@@ -487,6 +485,7 @@
                 {
                     if (!selectedDirectories.Contains(directory.FullName))
                     {
+                        Debug.Log("Deleting " + directory.FullName);
                         DeleteDirectory(directory.FullName);
                     }
                 }
