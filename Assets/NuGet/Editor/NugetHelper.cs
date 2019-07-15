@@ -1215,12 +1215,13 @@
                                 extractedFile.Attributes |= FileAttributes.ReadOnly;
                             }
 
-                            if(Path.GetExtension(entry.FileName) == ".dll")
+                            if(Path.GetExtension(entry.FileName) == ".dll" && entry.FileName.Contains("gx42"))
                             {
                                 using(MD5 md5 = MD5.Create())
                                 {
                                     string fileName = Path.GetFileNameWithoutExtension(entry.FileName);
                                     Guid guid = new Guid(md5.ComputeHash(Encoding.Default.GetBytes(fileName)));
+                                    Debug.Log(string.Format("Using guid: {0} for file: {1}", guid, fileName));
                                     File.WriteAllText(filePath + ".meta",
 @"fileFormatVersion: 2
 guid: GUID
