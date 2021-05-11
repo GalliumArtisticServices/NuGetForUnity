@@ -2,10 +2,10 @@
 {
     using System.Collections.Generic;
     using System.IO;
+    using System.IO.Compression;
     using System.Linq;
     using System.Xml;
     using System.Xml.Linq;
-    using Ionic.Zip;
 
     /// <summary>
     /// Represents a .nuspec file used to store metadata for a NuGet package.
@@ -16,6 +16,12 @@
     /// </remarks>
     public class NuspecFile
     {
+        public NuspecFile()
+        {
+            Dependencies = new List<NugetFrameworkGroup>();
+            Files = new List<NuspecContentFile>();
+        }
+
         #region Required
         /// <summary>
         /// Gets or sets the ID of the NuGet package.
@@ -31,6 +37,11 @@
         /// Gets or sets the description of the NuGet package.
         /// </summary>
         public string Description { get; set; }
+
+        /// <summary>
+        /// Gets or sets the description of the NuGet package.
+        /// </summary>
+        public string Summary { get; set; }
 
         /// <summary>
         /// Gets or sets the authors of the NuGet package.
@@ -71,7 +82,7 @@
         /// <summary>
         /// Gets or sets the NuGet packages that this NuGet package depends on.
         /// </summary>
-        public List<NugetPackageIdentifier> Dependencies { get; set; }
+        public List<NugetFrameworkGroup> Dependencies { get; set; }
 
         /// <summary>
         /// Gets or sets the release notes of the NuGet package.
@@ -125,16 +136,13 @@
             if (File.Exists(nupkgFilepath))
             {
                 // get the .nuspec file from inside the .nupkg
-                using (ZipFile zip = ZipFile.Read(nupkgFilepath))
+                using (ZipArchive zip = ZipFile.OpenRead(nupkgFilepath))
                 {
                     //var entry = zip[string.Format("{0}.nuspec", packageId)];
-                    var entry = zip.First(x => x.FileName.EndsWith(".nuspec"));
+                    var entry = zip.Entries.First(x => x.FullName.EndsWith(".nuspec"));
 
-                    using (MemoryStream stream = new MemoryStream())
+                    using (Stream stream = entry.Open())
                     {
-                        entry.Extract(stream);
-                        stream.Position = 0;
-
                         nuspec = Load(stream);
                     }
                 }
@@ -197,6 +205,7 @@
             nuspec.IconUrl = (string)metadata.Element(XName.Get("iconUrl", nuspecNamespace)) ?? string.Empty;
             nuspec.RequireLicenseAcceptance = bool.Parse((string)metadata.Element(XName.Get("requireLicenseAcceptance", nuspecNamespace)) ?? "False");
             nuspec.Description = (string)metadata.Element(XName.Get("description", nuspecNamespace)) ?? string.Empty;
+            nuspec.Summary = (string)metadata.Element(XName.Get("summary", nuspecNamespace)) ?? string.Empty;
             nuspec.ReleaseNotes = (string)metadata.Element(XName.Get("releaseNotes", nuspecNamespace)) ?? string.Empty;
             nuspec.Copyright = (string)metadata.Element(XName.Get("copyright", nuspecNamespace));
             nuspec.Tags = (string)metadata.Element(XName.Get("tags", nuspecNamespace)) ?? string.Empty;
@@ -211,20 +220,43 @@
                 nuspec.RepositoryCommit = (string)repositoryElement.Attribute(XName.Get("commit")) ?? string.Empty;
             }
 
-            nuspec.Dependencies = new List<NugetPackageIdentifier>();
             var dependenciesElement = metadata.Element(XName.Get("dependencies", nuspecNamespace));
             if (dependenciesElement != null)
             {
-                foreach (var dependencyElement in dependenciesElement.Elements(XName.Get("dependency", nuspecNamespace)))
+                // Dependencies specified for specific target frameworks
+                foreach (var frameworkGroup in dependenciesElement.Elements(XName.Get("group", nuspecNamespace)))
                 {
-                    NugetPackageIdentifier dependency = new NugetPackageIdentifier();
-                    dependency.Id = (string)dependencyElement.Attribute("id") ?? string.Empty;
-                    dependency.Version = (string)dependencyElement.Attribute("version") ?? string.Empty;
-                    nuspec.Dependencies.Add(dependency);
+                    NugetFrameworkGroup group = new NugetFrameworkGroup();
+                    group.TargetFramework = ConvertFromNupkgTargetFrameworkName((string)frameworkGroup.Attribute("targetFramework") ?? string.Empty);
+
+                    foreach (var dependencyElement in frameworkGroup.Elements(XName.Get("dependency", nuspecNamespace)))
+                    {
+                        NugetPackageIdentifier dependency = new NugetPackageIdentifier();
+
+                        dependency.Id = (string)dependencyElement.Attribute("id") ?? string.Empty;
+                        dependency.Version = (string)dependencyElement.Attribute("version") ?? string.Empty;
+                        group.Dependencies.Add(dependency);
+                    }
+
+                    nuspec.Dependencies.Add(group);
+                }
+
+                // Flat dependency list
+                if (nuspec.Dependencies.Count == 0)
+                {
+                    NugetFrameworkGroup group = new NugetFrameworkGroup();
+                    foreach (var dependencyElement in dependenciesElement.Elements(XName.Get("dependency", nuspecNamespace)))
+                    {
+                        NugetPackageIdentifier dependency = new NugetPackageIdentifier();
+                        dependency.Id = (string)dependencyElement.Attribute("id") ?? string.Empty;
+                        dependency.Version = (string)dependencyElement.Attribute("version") ?? string.Empty;
+                        group.Dependencies.Add(dependency);
+                    }
+
+                    nuspec.Dependencies.Add(group);
                 }
             }
 
-            nuspec.Files = new List<NuspecContentFile>();
             var filesElement = package.Element(XName.Get("files", nuspecNamespace));
             if (filesElement != null)
             {
@@ -284,17 +316,17 @@
             {
                 metadata.Add(new XElement("iconUrl", IconUrl));
             }
-            
+
             if (RequireLicenseAcceptance)
             {
                 metadata.Add(new XElement("requireLicenseAcceptance", RequireLicenseAcceptance));
             }
-                
+
             if (!string.IsNullOrEmpty(ReleaseNotes))
             {
                 metadata.Add(new XElement("releaseNotes", ReleaseNotes));
             }
-                    
+
             if (!string.IsNullOrEmpty(Copyright))
             {
                 metadata.Add(new XElement("copyright", Copyright));
@@ -305,23 +337,32 @@
                 metadata.Add(new XElement("tags", Tags));
             }
 
-            if (Dependencies != null && Dependencies.Count > 0)
+            if (Dependencies.Count > 0)
             {
                 //UnityEngine.Debug.Log("Saving dependencies!");
                 var dependenciesElement = new XElement("dependencies");
-                foreach (var dependency in Dependencies)
+                foreach (var frameworkGroup in Dependencies)
                 {
-                    var dependencyElement = new XElement("dependency");
-                    dependencyElement.Add(new XAttribute("id", dependency.Id));
-                    dependencyElement.Add(new XAttribute("version", dependency.Version));
-                    dependenciesElement.Add(dependencyElement);
+                    var group = new XElement("group");
+                    if (!string.IsNullOrEmpty(frameworkGroup.TargetFramework))
+                    {
+                        group.Add(new XAttribute("targetFramework", frameworkGroup.TargetFramework));
+                    }
+
+                    foreach (var dependency in frameworkGroup.Dependencies)
+                    {
+                        var dependencyElement = new XElement("dependency");
+                        dependencyElement.Add(new XAttribute("id", dependency.Id));
+                        dependencyElement.Add(new XAttribute("version", dependency.Version));
+                        dependenciesElement.Add(dependencyElement);
+                    }
                 }
                 metadata.Add(dependenciesElement);
             }
 
             file.Root.Add(metadata);
 
-            if (Files != null && Files.Count > 0)
+            if (Files.Count > 0)
             {
                 //UnityEngine.Debug.Log("Saving files!");
                 var filesElement = new XElement("files");
@@ -348,6 +389,20 @@
             }
 
             file.Save(filePath);
+        }
+
+        static string ConvertFromNupkgTargetFrameworkName(string targetFramework)
+        {
+            var convertedTargetFramework = targetFramework
+                .ToLower()
+                .Replace(".netstandard", "netstandard")
+                .Replace("native0.0", "native");
+
+            convertedTargetFramework = convertedTargetFramework.StartsWith(".netframework") ?
+                convertedTargetFramework.Replace(".netframework", "net").Replace(".", "") :
+                convertedTargetFramework;
+
+            return convertedTargetFramework;
         }
     }
 }

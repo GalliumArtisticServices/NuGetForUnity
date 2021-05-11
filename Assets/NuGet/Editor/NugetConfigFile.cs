@@ -6,6 +6,7 @@
     using System.Linq;
     using System.Text;
     using System.Xml.Linq;
+    using UnityEditor;
 
     /// <summary>
     /// Represents a NuGet.config file that stores the NuGet settings.
@@ -117,10 +118,13 @@
             config.Add(addElement);
 
             // save the default push source
-            addElement = new XElement("add");
-            addElement.Add(new XAttribute("key", "DefaultPushSource"));
-            addElement.Add(new XAttribute("value", DefaultPushSource));
-            config.Add(addElement);
+            if (DefaultPushSource != null)
+            {
+                addElement = new XElement("add");
+                addElement.Add(new XAttribute("key", "DefaultPushSource"));
+                addElement.Add(new XAttribute("value", DefaultPushSource));
+                config.Add(addElement);
+            }
 
             if (Verbose)
             {
@@ -155,8 +159,9 @@
 
             configFile.Add(configuration);
 
+            bool fileExists = File.Exists(filepath);
             // remove the read only flag on the file, if there is one.
-            if (File.Exists(filepath))
+            if (fileExists)
             {
                 FileAttributes attributes = File.GetAttributes(filepath);
 
@@ -168,6 +173,8 @@
             }
 
             configFile.Save(filepath);
+
+            NugetHelper.DisableWSAPExportSetting(filepath, fileExists);
         }
 
         /// <summary>
@@ -180,9 +187,12 @@
             NugetConfigFile configFile = new NugetConfigFile();
             configFile.PackageSources = new List<NugetPackageSource>();
             configFile.InstallFromCache = true;
-            configFile.ReadOnlyPackageFiles = true;
+            configFile.ReadOnlyPackageFiles = false;
 
             XDocument file = XDocument.Load(filePath);
+
+            // Force disable
+            NugetHelper.DisableWSAPExportSetting(filePath, false);
 
             // read the full list of package sources (some may be disabled below)
             XElement packageSources = file.Root.Element("packageSources");
@@ -308,6 +318,7 @@
 @"<?xml version=""1.0"" encoding=""utf-8""?>
 <configuration>
     <packageSources>
+       <clear/>
        <add key=""NuGet"" value=""http://www.nuget.org/api/v2/"" />
     </packageSources>
     <disabledPackageSources />
@@ -321,6 +332,10 @@
 </configuration>";
 
             File.WriteAllText(filePath, contents, new UTF8Encoding());
+
+            AssetDatabase.Refresh();
+
+            NugetHelper.DisableWSAPExportSetting(filePath, false);
 
             return Load(filePath);
         }

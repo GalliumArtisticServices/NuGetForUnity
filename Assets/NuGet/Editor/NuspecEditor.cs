@@ -67,7 +67,8 @@
             file.Owners = "Your Name";
             file.LicenseUrl = "http://your_license_url_here";
             file.ProjectUrl = "http://your_project_url_here";
-            file.Description = "A description of what this packages is and does.";
+            file.Description = "A description of what this package is and does.";
+            file.Summary = "A brief description of what this package is and does.";
             file.ReleaseNotes = "Notes for this specific release";
             file.Copyright = "Copyright 2017";
             file.IconUrl = "https://www.nuget.org/Content/Images/packageDefaultIcon-50x50.png";
@@ -183,6 +184,7 @@
                 nuspec.IconUrl = EditorGUILayout.TextField(new GUIContent("Icon URL", "The URL for the icon of the package."), nuspec.IconUrl);
                 nuspec.RequireLicenseAcceptance = EditorGUILayout.Toggle(new GUIContent("Require License Acceptance", "Does the package license need to be accepted before use?"), nuspec.RequireLicenseAcceptance);
                 nuspec.Description = EditorGUILayout.TextField(new GUIContent("Description", "The description of the package."), nuspec.Description);
+                nuspec.Summary = EditorGUILayout.TextField(new GUIContent("Summary", "The brief description of the package."), nuspec.Summary);
                 nuspec.ReleaseNotes = EditorGUILayout.TextField(new GUIContent("Release Notes", "The release notes for this specific version of the package."), nuspec.ReleaseNotes);
                 nuspec.Copyright = EditorGUILayout.TextField(new GUIContent("Copyright", "The copyright details for the package."), nuspec.Copyright);
                 nuspec.Tags = EditorGUILayout.TextField(new GUIContent("Tags", "The space-delimited list of tags and keywords that describe the package and aid discoverability of packages through search and filtering."), nuspec.Tags);
@@ -207,7 +209,8 @@
                             // remove a package as a root if another package is dependent on it
                             foreach (NugetPackage package in installedPackages)
                             {
-                                foreach (NugetPackageIdentifier dependency in package.Dependencies)
+                                NugetFrameworkGroup packageFrameworkGroup = NugetHelper.GetBestDependencyFrameworkGroupForCurrentSettings(package);
+                                foreach (NugetPackageIdentifier dependency in packageFrameworkGroup.Dependencies)
                                 {
                                     roots.RemoveAll(p => p.Id == dependency.Id);
                                 }
@@ -216,14 +219,16 @@
                             // remove all existing dependencies from the .nuspec
                             nuspec.Dependencies.Clear();
 
-                            nuspec.Dependencies = roots.Cast<NugetPackageIdentifier>().ToList();
+                            nuspec.Dependencies.Add(new NugetFrameworkGroup());
+                            nuspec.Dependencies[0].Dependencies= roots.Cast<NugetPackageIdentifier>().ToList();
                         }
                     }
                     EditorGUILayout.EndHorizontal();
 
                     // display the dependencies
                     NugetPackageIdentifier toDelete = null;
-                    foreach (var dependency in nuspec.Dependencies)
+                    NugetFrameworkGroup nuspecFrameworkGroup = NugetHelper.GetBestDependencyFrameworkGroupForCurrentSettings(nuspec);
+                    foreach (var dependency in nuspecFrameworkGroup.Dependencies)
                     {
                         EditorGUILayout.BeginHorizontal();
                         GUILayout.Space(75);
@@ -262,7 +267,7 @@
 
                     if (toDelete != null)
                     {
-                        nuspec.Dependencies.Remove(toDelete);
+                        nuspecFrameworkGroup.Dependencies.Remove(toDelete);
                     }
 
                     EditorGUILayout.BeginHorizontal();
@@ -271,7 +276,7 @@
 
                         if (GUILayout.Button("Add Dependency"))
                         {
-                            nuspec.Dependencies.Add(new NugetPackageIdentifier());
+                            nuspecFrameworkGroup.Dependencies.Add(new NugetPackageIdentifier());
                         }
                     }
                     EditorGUILayout.EndHorizontal();
