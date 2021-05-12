@@ -811,7 +811,7 @@
                     {
                         GUI.DrawTexture(rect, package.Icon, ScaleMode.StretchToFill);
                     }
-                    else
+                    else if(defaultIcon != null)
                     {
                         GUI.DrawTexture(rect, defaultIcon, ScaleMode.StretchToFill);
                     }
@@ -974,18 +974,22 @@
                         // Show the dependencies
                         if (package.Dependencies.Count > 0)
                         {
-                            EditorStyles.label.wordWrap = true;
-                            EditorStyles.label.fontStyle = FontStyle.Italic;
-                            StringBuilder builder = new StringBuilder();
-
                             NugetFrameworkGroup frameworkGroup = NugetHelper.GetBestDependencyFrameworkGroupForCurrentSettings(package);
-                            foreach (var dependency in frameworkGroup.Dependencies)
+                            if (frameworkGroup.Dependencies.Count > 0)
                             {
-                                builder.Append(string.Format(" {0} {1};", dependency.Id, dependency.Version));
+                                EditorStyles.label.wordWrap = true;
+                                EditorStyles.label.fontStyle = FontStyle.Italic;
+                                StringBuilder builder = new StringBuilder();
+
+
+                                foreach (var dependency in frameworkGroup.Dependencies)
+                                {
+                                    builder.Append(string.Format(" {0} {1};", dependency.Id, dependency.Version));
+                                }
+                                EditorGUILayout.Space();
+                                EditorGUILayout.LabelField(string.Format("Depends on:{0}", builder.ToString()));
+                                EditorStyles.label.fontStyle = FontStyle.Normal;
                             }
-                            EditorGUILayout.Space();
-                            EditorGUILayout.LabelField(string.Format("Depends on:{0}", builder.ToString()));
-                            EditorStyles.label.fontStyle = FontStyle.Normal;
                         }
 
                         // Create the style for putting a box around the 'Clone' button

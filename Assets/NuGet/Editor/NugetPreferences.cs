@@ -28,169 +28,99 @@
 
             EditorGUILayout.LabelField(string.Format("Version: {0}", NuGetForUnityVersion));
 
-            if (NugetHelper.NugetConfigFile == null)
+            if (NugetHelper.LocalNugetConfigFile == null)
             {
                 NugetHelper.LoadNugetConfigFile();
             }
 
-            bool installFromCache = EditorGUILayout.Toggle("Install From the Cache", NugetHelper.NugetConfigFile.InstallFromCache);
-            if (installFromCache != NugetHelper.NugetConfigFile.InstallFromCache)
+            bool installFromCache = EditorGUILayout.Toggle("Install From the Cache", NugetHelper.LocalNugetConfigFile.InstallFromCache);
+            if (installFromCache != NugetHelper.LocalNugetConfigFile.InstallFromCache)
             {
                 preferencesChangedThisFrame = true;
-                NugetHelper.NugetConfigFile.InstallFromCache = installFromCache;
+                NugetHelper.LocalNugetConfigFile.InstallFromCache = installFromCache;
             }
 
-            bool readOnlyPackageFiles = EditorGUILayout.Toggle("Read-Only Package Files", NugetHelper.NugetConfigFile.ReadOnlyPackageFiles);
-            if (readOnlyPackageFiles != NugetHelper.NugetConfigFile.ReadOnlyPackageFiles)
+            bool readOnlyPackageFiles = EditorGUILayout.Toggle("Read-Only Package Files", NugetHelper.LocalNugetConfigFile.ReadOnlyPackageFiles);
+            if (readOnlyPackageFiles != NugetHelper.LocalNugetConfigFile.ReadOnlyPackageFiles)
             {
                 preferencesChangedThisFrame = true;
-                NugetHelper.NugetConfigFile.ReadOnlyPackageFiles = readOnlyPackageFiles;
+                NugetHelper.LocalNugetConfigFile.ReadOnlyPackageFiles = readOnlyPackageFiles;
             }
 
-            bool verbose = EditorGUILayout.Toggle("Use Verbose Logging", NugetHelper.NugetConfigFile.Verbose);
-            if (verbose != NugetHelper.NugetConfigFile.Verbose)
+            bool verbose = EditorGUILayout.Toggle("Use Verbose Logging", NugetHelper.LocalNugetConfigFile.Verbose);
+            if (verbose != NugetHelper.LocalNugetConfigFile.Verbose)
             {
                 preferencesChangedThisFrame = true;
-                NugetHelper.NugetConfigFile.Verbose = verbose;
+                NugetHelper.LocalNugetConfigFile.Verbose = verbose;
             }
 
-            EditorGUILayout.LabelField("Package Sources:");
+            if (preferencesChangedThisFrame)
+            {
+                NugetHelper.LocalNugetConfigFile.Save(NugetHelper.NugetConfigFilePath);
+            }
+
+            EditorGUILayout.LabelField("Project Package Sources:");
+
+            DisplayPackageSource(NugetHelper.LocalNugetConfigFile);
+
+            EditorGUILayout.LabelField("Global Package Sources:");
+
+            DisplayPackageSource(NugetHelper.GlobalNugetConfigFile);
+        }
+
+        private static void DisplayPackageSource(NugetConfigFile configFile)
+        {
+            if (configFile == null)
+                return;
 
             scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
 
+            bool preferencesChangedThisFrame = false;
             NugetPackageSource sourceToMoveUp = null;
             NugetPackageSource sourceToMoveDown = null;
             NugetPackageSource sourceToRemove = null;
 
-            foreach (var source in NugetHelper.NugetConfigFile.PackageSources)
+            foreach (var source in configFile.PackageSources)
             {
-                EditorGUILayout.BeginVertical();
+                preferencesChangedThisFrame = DisplaySourceUI(source, out sourceToMoveUp, out sourceToMoveDown, out sourceToRemove);
+
+                if (sourceToMoveUp != null)
                 {
-                    EditorGUILayout.BeginHorizontal();
+                    int index = configFile.PackageSources.IndexOf(sourceToMoveUp);
+                    if (index > 0)
                     {
-                        EditorGUILayout.BeginVertical(GUILayout.Width(20));
-                        {
-                            GUILayout.Space(10);
-                            bool isEnabled = EditorGUILayout.Toggle(source.IsEnabled, GUILayout.Width(20));
-                            if (isEnabled != source.IsEnabled)
-                            {
-                                preferencesChangedThisFrame = true;
-                                source.IsEnabled = isEnabled;
-                            }
-                        }
-                        EditorGUILayout.EndVertical();
-
-                        EditorGUILayout.BeginVertical();
-                        {
-                            string name = EditorGUILayout.TextField(source.Name);
-                            if (name != source.Name)
-                            {
-                                preferencesChangedThisFrame = true;
-                                source.Name = name;
-                            }
-
-                            string savedPath = EditorGUILayout.TextField(source.SavedPath).Trim();
-                            if (savedPath != source.SavedPath)
-                            {
-                                preferencesChangedThisFrame = true;
-                                source.SavedPath = savedPath;
-                            }
-                        }
-                        EditorGUILayout.EndVertical();
+                        configFile.PackageSources[index] = configFile.PackageSources[index - 1];
+                        configFile.PackageSources[index - 1] = sourceToMoveUp;
                     }
-                    EditorGUILayout.EndHorizontal();
-
-                    EditorGUILayout.BeginHorizontal();
-                    {
-                        GUILayout.Space(29);
-                        EditorGUIUtility.labelWidth = 75;
-                        EditorGUILayout.BeginVertical();
-
-                        bool hasPassword = EditorGUILayout.Toggle("Credentials", source.HasPassword);
-                        if (hasPassword != source.HasPassword)
-                        {
-                            preferencesChangedThisFrame = true;
-                            source.HasPassword = hasPassword;
-                        }
-
-                        if (source.HasPassword)
-                        {
-                            string userName = EditorGUILayout.TextField("User Name", source.UserName);
-                            if (userName != source.UserName)
-                            {
-                                preferencesChangedThisFrame = true;
-                                source.UserName = userName;
-                            }
-
-                            string savedPassword = EditorGUILayout.PasswordField("Password", source.SavedPassword);
-                            if (savedPassword != source.SavedPassword)
-                            {
-                                preferencesChangedThisFrame = true;
-                                source.SavedPassword = savedPassword;
-                            }
-                        }
-                        else
-                        {
-                            source.UserName = null;
-                        }
-                        EditorGUIUtility.labelWidth = 0;
-                        EditorGUILayout.EndVertical();
-                    }
-                    EditorGUILayout.EndHorizontal();
-
-                    EditorGUILayout.BeginHorizontal();
-                    {
-                        if (GUILayout.Button(string.Format("Move Up")))
-                        {
-                            sourceToMoveUp = source;
-                        }
-
-                        if (GUILayout.Button(string.Format("Move Down")))
-                        {
-                            sourceToMoveDown = source;
-                        }
-
-                        if (GUILayout.Button(string.Format("Remove")))
-                        {
-                            sourceToRemove = source;
-                        }
-                    }
-                    EditorGUILayout.EndHorizontal();
+                    preferencesChangedThisFrame = true;
                 }
-                EditorGUILayout.EndVertical();
-            }
 
-            if (sourceToMoveUp != null)
-            {
-                int index = NugetHelper.NugetConfigFile.PackageSources.IndexOf(sourceToMoveUp);
-                if (index > 0)
+                if (sourceToMoveDown != null)
                 {
-                    NugetHelper.NugetConfigFile.PackageSources[index] = NugetHelper.NugetConfigFile.PackageSources[index - 1];
-                    NugetHelper.NugetConfigFile.PackageSources[index - 1] = sourceToMoveUp;
+                    int index = configFile.PackageSources.IndexOf(sourceToMoveDown);
+                    if (index < configFile.PackageSources.Count - 1)
+                    {
+                        configFile.PackageSources[index] = configFile.PackageSources[index + 1];
+                        configFile.PackageSources[index + 1] = sourceToMoveDown;
+                    }
+                    preferencesChangedThisFrame = true;
                 }
-                preferencesChangedThisFrame = true;
-            }
 
-            if (sourceToMoveDown != null)
-            {
-                int index = NugetHelper.NugetConfigFile.PackageSources.IndexOf(sourceToMoveDown);
-                if (index < NugetHelper.NugetConfigFile.PackageSources.Count - 1)
+                if (sourceToRemove != null)
                 {
-                    NugetHelper.NugetConfigFile.PackageSources[index] = NugetHelper.NugetConfigFile.PackageSources[index + 1];
-                    NugetHelper.NugetConfigFile.PackageSources[index + 1] = sourceToMoveDown;
+                    configFile.PackageSources.Remove(sourceToRemove);
+                    preferencesChangedThisFrame = true;
                 }
-                preferencesChangedThisFrame = true;
-            }
 
-            if (sourceToRemove != null)
-            {
-                NugetHelper.NugetConfigFile.PackageSources.Remove(sourceToRemove);
-                preferencesChangedThisFrame = true;
+                if (preferencesChangedThisFrame)
+                {
+                    configFile.Save(configFile.FilePath);
+                }
             }
 
             if (GUILayout.Button(string.Format("Add New Source")))
             {
-                NugetHelper.NugetConfigFile.PackageSources.Add(new NugetPackageSource("New Source", "source_path"));
+                configFile.PackageSources.Add(new NugetPackageSource("New Source", "source_path", 2));
                 preferencesChangedThisFrame = true;
             }
 
@@ -202,11 +132,128 @@
                 NugetHelper.LoadNugetConfigFile();
                 preferencesChangedThisFrame = true;
             }
+        }
 
-            if (preferencesChangedThisFrame)
+        private static bool DisplaySourceUI(NugetPackageSource source, out NugetPackageSource sourceToMoveUp, out NugetPackageSource sourceToMoveDown, out NugetPackageSource sourceToRemove)
+        {
+            sourceToMoveUp = null;
+            sourceToMoveDown = null;
+            sourceToRemove = null;
+
+            EditorGUILayout.BeginVertical();
+            bool preferencesChangedThisFrame;
             {
-                NugetHelper.NugetConfigFile.Save(NugetHelper.NugetConfigFilePath);
+                var last = source.ProtocolVersion;
+
+                string[] options = new string[] { "0", "1", "2", "3" };
+                source.ProtocolVersion = EditorGUILayout.Popup("Protocol Version", source.ProtocolVersion, options);
+
+                if (source.ProtocolVersion < 2)
+                {
+                    Debug.LogWarning("Protocol Version 1 is obsolete");
+                    source.ProtocolVersion = 2;
+                }
+
+                preferencesChangedThisFrame = last != source.ProtocolVersion;
             }
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.BeginVertical();
+            {
+                EditorGUILayout.BeginHorizontal();
+                {
+                    EditorGUILayout.BeginVertical(GUILayout.Width(20));
+                    {
+                        GUILayout.Space(10);
+                        bool isEnabled = EditorGUILayout.Toggle(source.IsEnabled, GUILayout.Width(20));
+                        if (isEnabled != source.IsEnabled)
+                        {
+                            preferencesChangedThisFrame = true;
+                            source.IsEnabled = isEnabled;
+                        }
+                    }
+                    EditorGUILayout.EndVertical();
+
+                    EditorGUILayout.BeginVertical();
+                    {
+                        string name = EditorGUILayout.TextField(source.Name);
+                        if (name != source.Name)
+                        {
+                            preferencesChangedThisFrame = true;
+                            source.Name = name;
+                        }
+
+                        string savedPath = EditorGUILayout.TextField(source.SavedPath).Trim();
+                        if (savedPath != source.SavedPath)
+                        {
+                            preferencesChangedThisFrame = true;
+                            source.SavedPath = savedPath;
+                        }
+                    }
+                    EditorGUILayout.EndVertical();
+                }
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.BeginHorizontal();
+                {
+                    GUILayout.Space(29);
+                    EditorGUIUtility.labelWidth = 75;
+                    EditorGUILayout.BeginVertical();
+
+                    bool hasPassword = EditorGUILayout.Toggle("Credentials", source.HasPassword);
+                    if (hasPassword != source.HasPassword)
+                    {
+                        preferencesChangedThisFrame = true;
+                        source.HasPassword = hasPassword;
+                    }
+
+                    if (source.HasPassword)
+                    {
+                        string userName = EditorGUILayout.TextField("User Name", source.UserName);
+                        if (userName != source.UserName)
+                        {
+                            preferencesChangedThisFrame = true;
+                            source.UserName = userName;
+                        }
+
+                        string savedPassword = EditorGUILayout.PasswordField("Password", source.SavedPassword);
+                        if (savedPassword != source.SavedPassword)
+                        {
+                            preferencesChangedThisFrame = true;
+                            source.SavedPassword = savedPassword;
+                        }
+                    }
+                    else
+                    {
+                        source.UserName = null;
+                    }
+                    EditorGUIUtility.labelWidth = 0;
+                    EditorGUILayout.EndVertical();
+                }
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.BeginHorizontal();
+                {
+                    if (GUILayout.Button(string.Format("Move Up")))
+                    {
+                        sourceToMoveUp = source;
+                    }
+
+                    if (GUILayout.Button(string.Format("Move Down")))
+                    {
+                        sourceToMoveDown = source;
+                    }
+
+                    if (GUILayout.Button(string.Format("Remove")))
+                    {
+                        sourceToRemove = source;
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+            EditorGUILayout.EndVertical();
+
+            return preferencesChangedThisFrame;
         }
     }
 }

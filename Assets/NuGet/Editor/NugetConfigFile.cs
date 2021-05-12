@@ -26,6 +26,16 @@
         public NugetPackageSource ActivePackageSource { get; private set; }
 
         /// <summary>
+        /// The Protocol Version for this config.
+        /// </summary>
+        public int ProtocolVersion { get; private set; }
+
+        /// <summary>
+        /// The filePath this config file was loaded from.
+        /// </summary>
+        public string FilePath { get; private set; }
+
+        /// <summary>
         /// Gets the local path where packages are to be installed.  It can be a full path or a relative path.
         /// </summary>
         public string RepositoryPath { get; private set; }
@@ -75,6 +85,7 @@
                 addElement = new XElement("add");
                 addElement.Add(new XAttribute("key", source.Name));
                 addElement.Add(new XAttribute("value", source.SavedPath));
+                addElement.Add(new XAttribute("protocolVersion", source.ProtocolVersion));
                 packageSources.Add(addElement);
 
                 if (!source.IsEnabled)
@@ -87,7 +98,9 @@
 
                 if (source.HasPassword)
                 {
-                    XElement sourceElement = new XElement(source.Name);
+                    string element_name = source.Name.Replace(" ", "_");
+
+                    XElement sourceElement = new XElement(element_name);
                     packageSourceCredentials.Add(sourceElement);
 
                     addElement = new XElement("add");
@@ -188,6 +201,7 @@
             configFile.PackageSources = new List<NugetPackageSource>();
             configFile.InstallFromCache = true;
             configFile.ReadOnlyPackageFiles = false;
+            configFile.FilePath = filePath;
 
             XDocument file = XDocument.Load(filePath);
 
@@ -201,7 +215,13 @@
                 var adds = packageSources.Elements("add");
                 foreach (var add in adds)
                 {
-                    configFile.PackageSources.Add(new NugetPackageSource(add.Attribute("key").Value, add.Attribute("value").Value));
+                    int protocolVersion = 2;
+                    if(add.Attribute("protocolVersion") != null)
+                    {
+                        protocolVersion = int.Parse(add.Attribute("protocolVersion").Value);
+                    }
+
+                    configFile.PackageSources.Add(new NugetPackageSource(add.Attribute("key").Value, add.Attribute("value").Value, protocolVersion));
                 }
             }
 
@@ -210,7 +230,14 @@
             if (activePackageSource != null)
             {
                 var add = activePackageSource.Element("add");
-                configFile.ActivePackageSource = new NugetPackageSource(add.Attribute("key").Value, add.Attribute("value").Value);
+
+                int protocolVersion = 2;
+                if (add.Attribute("protocolVersion") != null)
+                {
+                    protocolVersion = int.Parse(add.Attribute("protocolVersion").Value);
+                }
+
+                configFile.ActivePackageSource = new NugetPackageSource(add.Attribute("key").Value, add.Attribute("value").Value, protocolVersion);
             }
 
             // disable all listed disabled package sources
@@ -239,7 +266,7 @@
             {
                 foreach (var sourceElement in packageSourceCredentials.Elements())
                 {
-                    string name = sourceElement.Name.LocalName;
+                    string name = sourceElement.Name.LocalName.Replace("_", " ");
                     var source = configFile.PackageSources.FirstOrDefault(p => p.Name == name);
                     if (source != null)
                     {

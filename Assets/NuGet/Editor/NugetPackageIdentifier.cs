@@ -18,12 +18,6 @@
         public string Version;
 
         /// <summary>
-        /// Directory to install package to. 
-        /// 6/12/19 - Back to using version number because it turns out that wasn't the issue
-        /// </summary>
-        public string InstallDir { get { return string.Format("{0}.{1}", Id, Version); } }
-
-        /// <summary>
         /// Gets a value indicating whether this is a prerelease package or an official release package.
         /// </summary>
         public bool IsPrerelease { get { return Version.Contains("-"); } }

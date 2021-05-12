@@ -6,7 +6,7 @@
     using System.IO;
     using System.Linq;
     using System.Net;
-    using System.Xml;
+    using System.Runtime.Serialization.Json;
     using System.Xml.Linq;
     using Debug = UnityEngine.Debug;
 
@@ -24,6 +24,8 @@
         /// Gets or sets the path of the package source.
         /// </summary>
         public string SavedPath { get; set; }
+
+        public int ProtocolVersion { get; set; }
 
         /// <summary>
         /// Gets path, with the values of environment variables expanded.
@@ -93,14 +95,16 @@
         /// <summary>
         /// Initializes a new instance of the <see cref="NugetPackageSource"/> class.
         /// </summary>
-        /// <param name="name">The name of the package source.</param>
-        /// <param name="path">The path to the package source.</param>
-        public NugetPackageSource(string name, string path)
+        /// <param name="name"></param>
+        /// <param name="path"></param>
+        /// <param name="protocolVersion"></param>
+        public NugetPackageSource(string name, string path, int protocolVersion)
         {
             Name = name;
             SavedPath = path;
             IsLocalPath = !ExpandedPath.StartsWith("http");
             IsEnabled = true;
+            ProtocolVersion = protocolVersion;
         }
 
         /// <summary>
@@ -132,13 +136,25 @@
             }
             else
             {
-                // See here: http://www.odata.org/documentation/odata-version-2-0/uri-conventions/
-                string url = string.Format("{0}FindPackagesById()?id='{1}'", ExpandedPath, package.Id);
+                string url = null;
+
+                if (ProtocolVersion == 2)
+                {
+                    // See here: http://www.odata.org/documentation/odata-version-2-0/uri-conventions/
+                    url = string.Format("{0}FindPackagesById()?id='{1}&$orderby=Id desc'", ExpandedPath, package.Id);
+                }
+                else
+                {
+                    url = string.Format("{0}query?q={1}", ExpandedPath, package.Id);
+                }
                 
                 // Are we looking for a specific package?
                 if (!package.HasVersionRange)
                 {
-                    url = string.Format("{0}&$filter=Version eq '{1}'", url, package.Version);
+                    if (ProtocolVersion == 2)
+                    {
+                        url = string.Format("{0}&$filter=Version eq '{1}'", url, package.Version);
+                    }
                 }
 
                 try
@@ -174,9 +190,12 @@
         /// <returns>The retrieved package, if there is one.  Null if no matching package was found.</returns>
         public NugetPackage GetSpecificPackage(NugetPackageIdentifier package)
         {
-            if (package.HasVersionRange)
+            if (ProtocolVersion == 2)
             {
-                return FindPackagesById(package).FirstOrDefault();
+                if (package.HasVersionRange)
+                {
+                    return FindPackagesById(package).FirstOrDefault();
+                }
             }
 
             if (IsLocalPath)
@@ -194,10 +213,33 @@
             }
             else
             {
-                string url = string.Format("{0}Packages(Id='{1}',Version='{2}')", ExpandedPath, package.Id, package.Version);
+                string url;
+                if (ProtocolVersion == 2)
+                {
+                    url = string.Format("{0}Packages(Id='{1}',Version='{2},$orderby=Id desc')", ExpandedPath, package.Id, package.Version);
+                }
+                else
+                {
+                    if (Name.Contains("Nuget"))
+                    {
+                        url = string.Format("{0}query?q={1}", ExpandedPath, package.Id);
+                    }
+                    else
+                    { 
+                        url = string.Format("{0}{1}/{2}.json", ExpandedPath, package.Id, package.MinimumVersion);
+                    }
+                }
+
                 try
                 {
-                    return GetPackagesFromUrl(url, UserName, ExpandedPassword).First();
+                    if (ProtocolVersion == 2 || Name.Contains("Nuget"))
+                    {
+                        return GetPackagesFromUrl(url, UserName, ExpandedPassword).First();
+                    }
+                    else
+                    {
+                        return GetPackagesFromExplicitUrl(url, UserName, ExpandedPassword).First();
+                    }
                 }
                 catch (Exception e)
                 {
@@ -230,41 +272,56 @@
 
             string url = ExpandedPath;
 
-            // call the search method
-            url += "Search()?";
+            if(ProtocolVersion == 2)
+            {
+                // call the search method
+                url += "Search()?";
+            }
+            else
+            {
+                url = string.Format("{0}query?q={1}", url, string.IsNullOrEmpty(searchTerm) ? "gx42" : searchTerm);
+            }
 
             // filter results
             if (!includeAllVersions)
             {
-                if (!includePrerelease)
+                if (ProtocolVersion == 2)
                 {
-                    url += "$filter=IsLatestVersion&";
+                    if (!includePrerelease)
+                    {
+                        url += "$filter=IsLatestVersion&";
+                    }
+                    else
+                    {
+                        url += "$filter=IsAbsoluteLatestVersion&";
+                    }
                 }
                 else
                 {
-                    url += "$filter=IsAbsoluteLatestVersion&";
+                    url = string.Format("{0}&prerelease={1}", url, includePrerelease);
                 }
             }
 
-            // order results
-            //url += "$orderby=Id&";
-            //url += "$orderby=LastUpdated&";
-            url += "$orderby=DownloadCount desc&";
-
             // skip a certain number of entries
-            url += string.Format("$skip={0}&", numberToSkip);
+            url = string.Format("{0}&skip={1}", url, numberToSkip);
 
-            // show a certain number of entries
-            url += string.Format("$top={0}&", numberToGet);
+            if (ProtocolVersion == 2)
+            {
+                // order results
+                url += "$orderby=DownloadCount desc&";
+            
+                // show a certain number of entries
+                url += string.Format("$top={0}&", numberToGet);
 
-            // apply the search term
-            url += string.Format("searchTerm='{0}'&", searchTerm);
+                // apply the search term
+                url += string.Format("searchTerm='{0}'&", searchTerm);
 
-            // apply the target framework filters
-            url += "targetFramework=''&";
+                // apply the target framework filters
+                url += "targetFramework=''&";
 
-            // should we include prerelease packages?
-            url += string.Format("includePrerelease={0}", includePrerelease.ToString().ToLower());
+                // should we include prerelease packages?
+                url += string.Format("includePrerelease={0}", includePrerelease.ToString().ToLower());
+            }
 
             try
             {
@@ -375,13 +432,104 @@
 
             using (Stream responseStream = NugetHelper.RequestUrl(url, username, password, timeOut: 5000))
             {
-                using (StreamReader streamReader = new StreamReader(responseStream))
+                if(responseStream == null)
                 {
-                    packages = NugetODataResponse.Parse(XDocument.Load(streamReader));
-                    foreach (var package in packages)
+                    return packages;
+                }
+
+                if (ProtocolVersion == 2)
+                {
+                    using (StreamReader streamReader = new StreamReader(responseStream))
                     {
-                        package.PackageSource = this;
+                        packages = NugetODataResponse.Parse(XDocument.Load(streamReader));
+                        foreach (var package in packages)
+                        {
+                            package.PackageSource = this;
+                        }
                     }
+                }
+                else
+                {
+                    DataContractJsonSerializer ser = new DataContractJsonSerializer(typeof(NugetJsonResponse));
+                    NugetJsonResponse response = ser.ReadObject(responseStream) as NugetJsonResponse;
+
+                    for(int i = 0; i < response.Data.Length; ++i)
+                    {
+                        NugetPackage package = response.Data[i].ToNugetPackage();
+                        package.PackageSource = this;
+
+                        if (!string.IsNullOrEmpty(response.Data[i].IconUrl))
+                        {
+                            package.Icon = NugetHelper.DownloadImage(response.Data[i].IconUrl);
+                        }
+
+                        // Get actual downloadUrl
+                        Stream catalogStream = NugetHelper.RequestUrl(package.DownloadUrl, username, password, timeOut: 5000);
+
+                        if (package.DownloadUrl.Contains("github.com"))
+                        {
+                            ser = new DataContractJsonSerializer(typeof(NugetPackageCatalog<CatalogEntry>));
+                            NugetPackageCatalog<CatalogEntry> catalog = ser.ReadObject(catalogStream) as NugetPackageCatalog<CatalogEntry>;
+                            package.DownloadUrl = catalog.PackageContent;
+                        }
+                        else
+                        {
+                            ser = new DataContractJsonSerializer(typeof(NugetPackageCatalog<string>));
+                            NugetPackageCatalog<string> catalog = ser.ReadObject(catalogStream) as NugetPackageCatalog<string>;
+                            package.DownloadUrl = catalog.PackageContent;
+                        }
+
+                        packages.Add(package);
+                    }
+                }
+            }
+
+            stopwatch.Stop();
+            NugetHelper.LogVerbose("Retreived {0} packages in {1} ms", packages.Count, stopwatch.ElapsedMilliseconds);
+
+            return packages;
+        }
+
+        private List<NugetPackage> GetPackagesFromExplicitUrl(string url, string username, string password)
+        {
+            NugetHelper.LogVerbose("Getting packages from: {0}", url);
+
+            Stopwatch stopwatch = new Stopwatch();
+            stopwatch.Start();
+
+            List<NugetPackage> packages = new List<NugetPackage>();
+
+            // Mono doesn't have a Certificate Authority, so we have to provide all validation manually.  Currently just accept anything.
+            // See here: http://stackoverflow.com/questions/4926676/mono-webrequest-fails-with-https
+
+            // remove all handlers
+            ServicePointManager.ServerCertificateValidationCallback = null;
+
+            // add anonymous handler
+            ServicePointManager.ServerCertificateValidationCallback += (sender, certificate, chain, policyErrors) => true;
+
+            using (Stream responseStream = NugetHelper.RequestUrl(url, username, password, timeOut: 5000))
+            {
+                if (ProtocolVersion == 2)
+                {
+                    using (StreamReader streamReader = new StreamReader(responseStream))
+                    {
+                        packages = NugetODataResponse.Parse(XDocument.Load(streamReader));
+                        foreach (var package in packages)
+                        {
+                            package.PackageSource = this;
+                        }
+                    }
+                }
+                else
+                {
+                    DataContractJsonSerializer ser = new DataContractJsonSerializer(typeof(NugetPackageCatalog<CatalogEntry>));
+                    NugetPackageCatalog<CatalogEntry> catalog = ser.ReadObject(responseStream) as NugetPackageCatalog<CatalogEntry>;
+
+                    NugetPackage package = catalog.CatalogEntry.ToNugetPackage();
+                    package.PackageSource = this;
+
+                    packages.Add(package);
                 }
             }
 

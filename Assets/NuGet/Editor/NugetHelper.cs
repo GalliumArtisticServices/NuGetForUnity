@@ -10,12 +10,10 @@
     using System.Security.Cryptography;
     using System.Text;
     using System.Text.RegularExpressions;
+    using System.Xml.Linq;
     using UnityEditor;
     using UnityEngine;
     using Debug = UnityEngine.Debug;
-    using System.Security.Cryptography;
-    using System.Text.RegularExpressions;
-    using System.Xml.Linq;
 
     /// <summary>
     /// A set of helper methods that act as a wrapper around nuget.exe
@@ -27,8 +25,9 @@
     [InitializeOnLoad]
     public static class NugetHelper
     {
-        const string GLOBAL_CONFIG_PATH_CONFIG = ".config/NuGet/NuGet.Config";
         const string GLOBAL_CONFIG_PATH_NUGET = ".nuget/NuGet/NuGet.Config";
+
+        private static bool insideInitializeOnLoad = false;
 
         /// <summary>
         /// The path to the nuget.config file.
@@ -53,7 +52,12 @@
         /// <summary>
         /// The loaded NuGet.config file that holds the settings for NuGet.
         /// </summary>
-        public static NugetConfigFile NugetConfigFile { get; private set; }
+        public static NugetConfigFile LocalNugetConfigFile { get; private set; }
+
+        /// <summary>
+        /// The global loaded NuGet.config file that holds the settings for NuGet.
+        /// </summary>
+        public static NugetConfigFile GlobalNugetConfigFile { get; private set; }
 
         /// <summary>
         /// Backing field for the packages.config file.
@@ -120,10 +124,8 @@
                     return;
                 }
 
-            DotNetVersion = PlayerSettings.GetApiCompatibilityLevel(EditorUserBuildSettings.selectedBuildTargetGroup);
-
-            // Load the NuGet.config file
-            LoadNugetConfigFile();
+                // Load the NuGet.config file
+                LoadNugetConfigFile();
 
                 // create the nupkgs directory, if it doesn't exist
                 if (!Directory.Exists(PackOutputDirectory))
@@ -147,13 +149,13 @@
         {
             if (File.Exists(NugetConfigFilePath))
             {
-                NugetConfigFile = NugetConfigFile.Load(NugetConfigFilePath);
+                LocalNugetConfigFile = NugetConfigFile.Load(NugetConfigFilePath);
             }
             else
             {
                 Debug.LogFormat("No NuGet.config file found. Creating default at {0}", NugetConfigFilePath);
 
-                NugetConfigFile = NugetConfigFile.CreateDefaultFile(NugetConfigFilePath);
+                LocalNugetConfigFile = NugetConfigFile.CreateDefaultFile(NugetConfigFilePath);
                 AssetDatabase.Refresh();
             }
 
@@ -172,7 +174,7 @@
                     }
                     else
                     {
-                        NugetPackageSource source = new NugetPackageSource("CMD_LINE_SRC_" + packageSources.Count, arg);
+                        NugetPackageSource source = new NugetPackageSource("CMD_LINE_SRC_" + packageSources.Count, arg, 2);
                         LogVerbose("Adding command line package source {0} at {1}", "CMD_LINE_SRC_" + packageSources.Count, arg);
                         packageSources.Add(source);
                     }
@@ -181,7 +183,7 @@
                 if (arg == "-Source")
                 {
                     // if the source is being forced, don't install packages from the cache
-                    NugetConfigFile.InstallFromCache = false;
+                    LocalNugetConfigFile.InstallFromCache = false;
                     readingSources = true;
                     useCommandLineSources = true;
                 }
@@ -190,39 +192,53 @@
             // if there are not command line overrides, use the NuGet.config package sources
             if (!useCommandLineSources)
             {
-                if (NugetConfigFile.ActivePackageSource.ExpandedPath == "(Aggregate source)")
+                if (LocalNugetConfigFile.ActivePackageSource.ExpandedPath == "(Aggregate source)")
                 {
-                    packageSources.AddRange(NugetConfigFile.PackageSources);
+                    packageSources.AddRange(LocalNugetConfigFile.PackageSources);
                 }
                 else
                 {
-                    packageSources.Add(NugetConfigFile.ActivePackageSource);
+                    packageSources.Add(LocalNugetConfigFile.ActivePackageSource);
                 }
 
                 // Add packages from global NuGet config
                 string userPath = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
 
-                string globalConfigPathConfig = Path.Combine(userPath, GLOBAL_CONFIG_PATH_CONFIG);
                 string globalConfigPathNuget = Path.Combine(userPath, GLOBAL_CONFIG_PATH_NUGET);
-
-                string globalConfigPath = File.Exists(globalConfigPathConfig) ? globalConfigPathConfig : (File.Exists(globalConfigPathNuget) ? globalConfigPathNuget : "");
-
-                if (!string.IsNullOrEmpty(globalConfigPath))
+                bool globalExists = File.Exists(globalConfigPathNuget);
+                if (globalExists)
                 {
-                    XDocument globalFile = XDocument.Load(globalConfigPath);
+                    GlobalNugetConfigFile = NugetConfigFile.Load(globalConfigPathNuget);
+                }
+
+                if (globalExists)
+                {
+                    XDocument globalFile = XDocument.Load(globalConfigPathNuget);
                     XElement globalPackageSources = globalFile.Root.Element("packageSources");
                     if (globalPackageSources != null)
                     {
                         var adds = globalPackageSources.Elements("add");
+
                         foreach (var add in adds)
                         {
-                            if (!packageSources.Exists(p => p.Name == add.Attribute("key" ).Value))
+                            if (!GlobalNugetConfigFile.PackageSources.Exists(p => p.Name == add.Attribute("key").Value))
                             {
-                                NugetPackageSource newSource = new NugetPackageSource(add.Attribute("key").Value, add.Attribute("value").Value);
+                                int protocolVersion = 2;
+                                if(add.Attribute("protocolVersion") != null)
+                                {
+                                    protocolVersion = int.Parse(add.Attribute("protocolVersion").Value);
+                                }
+
+                                NugetPackageSource newSource = new NugetPackageSource(add.Attribute("key").Value, add.Attribute("value").Value, protocolVersion);
                                 newSource.IsEnabled = true;
 
-                                packageSources.Add(newSource);
+                                GlobalNugetConfigFile.PackageSources.Add(newSource);
                             }
+                        }
+
+                        foreach(NugetPackageSource source in GlobalNugetConfigFile.PackageSources)
+                        {
+                            packageSources.Add(source);
                         }
                     }
                 }
@@ -360,7 +376,7 @@
             {
                 if (!insideInitializeOnLoad)
                 {
-                    Debug.LogError(string.Format("Couldn't get importer for '{0}'.", filePath));
+                    Debug.LogWarning(string.Format("Couldn't get importer for '{0}'.", filePath));
                 }
                 return;
             }
@@ -392,7 +408,7 @@
         /// <param name="package">The NugetPackage to clean.</param>
         private static void Clean(NugetPackageIdentifier package)
         {
-            string packageInstallDirectory = Path.Combine(NugetConfigFile.RepositoryPath, package.InstallDir);
+            string packageInstallDirectory = Path.Combine(LocalNugetConfigFile.RepositoryPath, string.Format("{0}.{1}", package.Id, package.Version));
 
             LogVerbose("Cleaning {0}", packageInstallDirectory);
 
@@ -426,12 +442,7 @@
 
             if (Directory.Exists(packageInstallDirectory + "/lib"))
             {
-                ApiCompatibilityLevel dotNetVersion = PlayerSettings.GetApiCompatibilityLevel(EditorUserBuildSettings.selectedBuildTargetGroup);
-
-                int intDotNetVersion = (int)dotNetVersion; // c
-                //bool using46 = DotNetVersion == ApiCompatibilityLevel.NET_4_6; // NET_4_6 option was added in Unity 5.6
-                bool using46 = intDotNetVersion == 3; // NET_4_6 = 3 in Unity 5.6 and Unity 2017.1 - use the hard-coded int value to ensure it works in earlier versions of Unity
-                bool usingStandard2 = intDotNetVersion == 6; // using .net standard 2.0                
+                List<string> selectedDirectories = new List<string>();
 
                 // go through the library folders in descending order (highest to lowest version)
                 IEnumerable<DirectoryInfo> libDirectories = Directory.GetDirectories(packageInstallDirectory + "/lib").Select(s => new DirectoryInfo(s));
@@ -473,7 +484,6 @@
 
                     if (!validDirectory)
                     {
-                        Debug.Log("Deleting " + directory.FullName);
                         DeleteDirectory(directory.FullName);
                     }
                 }
@@ -957,10 +967,10 @@
             PackagesConfigFile.RemovePackage(package);
             PackagesConfigFile.Save(PackagesConfigFilePath);
 
-            string packageInstallDirectory = Path.Combine(NugetConfigFile.RepositoryPath, package.InstallDir);
+            string packageInstallDirectory = Path.Combine(LocalNugetConfigFile.RepositoryPath, string.Format("{0}.{1}", package.Id, package.Version));
             DeleteDirectory(packageInstallDirectory);
 
-            string metaFile = Path.Combine(NugetConfigFile.RepositoryPath, package.InstallDir);
+            string metaFile = Path.Combine(LocalNugetConfigFile.RepositoryPath, string.Format("{0}.{1}.meta", package.Id, package.Version));
             DeleteFile(metaFile);
 
             string toolsInstallDirectory = Path.Combine(Application.dataPath, string.Format("../Packages/{0}.{1}", package.Id, package.Version));
@@ -1038,10 +1048,10 @@
             installedPackages.Clear();
 
             // loops through the packages that are actually installed in the project
-            if (Directory.Exists(NugetConfigFile.RepositoryPath))
+            if (Directory.Exists(LocalNugetConfigFile.RepositoryPath))
             {
                 // a package that was installed via NuGet will have the .nupkg it came from inside the folder
-                string[] nupkgFiles = Directory.GetFiles(NugetConfigFile.RepositoryPath, "*.nupkg", SearchOption.AllDirectories);
+                string[] nupkgFiles = Directory.GetFiles(LocalNugetConfigFile.RepositoryPath, "*.nupkg", SearchOption.AllDirectories);
                 foreach (string nupkgFile in nupkgFiles)
                 {
                     NugetPackage package = NugetPackage.FromNupkgFile(nupkgFile);
@@ -1056,7 +1066,7 @@
                 }
 
                 // if the source code & assets for a package are pulled directly into the project (ex: via a symlink/junction) it should have a .nuspec defining the package
-                string[] nuspecFiles = Directory.GetFiles(NugetConfigFile.RepositoryPath, "*.nuspec", SearchOption.AllDirectories);
+                string[] nuspecFiles = Directory.GetFiles(LocalNugetConfigFile.RepositoryPath, "*.nuspec", SearchOption.AllDirectories);
                 foreach (string nuspecFile in nuspecFiles)
                 {
                     NugetPackage package = NugetPackage.FromNuspec(NuspecFile.Load(nuspecFile));
@@ -1096,7 +1106,7 @@
             {
                 List<NugetPackage> newPackages = source.Search(searchTerm, includeAllVersions, includePrerelease, numberToGet, numberToSkip);
                 packages.AddRange(newPackages);
-                packages = packages.Distinct().ToList();
+                //packages = packages.Distinct().ToList();
             }
 
             return packages;
@@ -1193,7 +1203,7 @@
         {
             NugetPackage package = null;
 
-            if (NugetHelper.NugetConfigFile.InstallFromCache)
+            if (NugetHelper.LocalNugetConfigFile.InstallFromCache)
             {
                 string cachedPackagePath = System.IO.Path.Combine(NugetHelper.PackOutputDirectory, string.Format("./{0}.{1}.nupkg", packageId.Id, packageId.Version));
 
@@ -1225,7 +1235,7 @@
                     continue;
                 }
 
-                if (foundPackage.Version == packageId.Version)
+                if (foundPackage.Version == packageId.MinimumVersion)
                 {
                     LogVerbose("{0} {1} was found in {2}", foundPackage.Id, foundPackage.Version, source.Name);
                     return foundPackage;
@@ -1282,8 +1292,12 @@
                 return true;
             }
 
-            NugetPackage foundPackage = GetSpecificPackage(package);
+            if(package.GetType().Equals(typeof(NugetPackage)))
+            {
+                return Install((NugetPackage)package, refreshAssets);
+            }
 
+            NugetPackage foundPackage = GetSpecificPackage(package);
             if (foundPackage != null)
             {
                 return Install(foundPackage, refreshAssets);
@@ -1302,7 +1316,7 @@
         /// <param name="args">The arguments for the formattted message string.</param>
         public static void LogVerbose(string format, params object[] args)
         {
-            if (NugetConfigFile == null || NugetConfigFile.Verbose)
+            if (LocalNugetConfigFile == null || LocalNugetConfigFile.Verbose)
             {
 #if UNITY_5_4_OR_NEWER
                 StackTraceLogType stackTraceLogType = Application.GetStackTraceLogType(LogType.Log);
@@ -1385,7 +1399,7 @@
                 PackagesConfigFile.Save(PackagesConfigFilePath);
 
                 string cachedPackagePath = Path.Combine(PackOutputDirectory, string.Format("./{0}.{1}.nupkg", package.Id, package.Version));
-                if (NugetConfigFile.InstallFromCache && File.Exists(cachedPackagePath))
+                if (LocalNugetConfigFile.InstallFromCache && File.Exists(cachedPackagePath))
                 {
                     LogVerbose("Cached package found for {0} {1}", package.Id, package.Version);
                 }
@@ -1420,6 +1434,12 @@
                         }
 
                         Stream objStream = RequestUrl(package.DownloadUrl, package.PackageSource.UserName, package.PackageSource.ExpandedPassword, timeOut: null);
+
+                        if(objStream == null)
+                        {
+                            return false;
+                        }
+
                         using (Stream file = File.Create(cachedPackagePath))
                         {
                             CopyStream(objStream, file);
@@ -1434,71 +1454,77 @@
 
                 if (File.Exists(cachedPackagePath))
                 {
-                    string baseDirectory = Path.Combine(NugetConfigFile.RepositoryPath, package.InstallDir);
+                    string baseDirectory = Path.Combine(LocalNugetConfigFile.RepositoryPath, string.Format("{0}.{1}", package.Id, package.Version));
 
                     // unzip the package
                     using (ZipArchive zip = ZipFile.OpenRead(cachedPackagePath))
                     {
                         foreach (ZipArchiveEntry entry in zip.Entries)
                         {
-                            entry.Extract(baseDirectory, ExtractExistingFileAction.OverwriteSilently);
-                            string filePath = Path.Combine(baseDirectory, entry.FileName);
-                            if (NugetConfigFile.ReadOnlyPackageFiles)
+                            string filePath = Path.Combine(baseDirectory, entry.FullName);
+                            string directory = Path.GetDirectoryName(filePath);
+                            Directory.CreateDirectory(directory);
+                            if (Directory.Exists(filePath)) continue;
+
+                            entry.ExtractToFile(filePath, overwrite: true);
+
+                            if (LocalNugetConfigFile.ReadOnlyPackageFiles)
                             {
                                 FileInfo extractedFile = new FileInfo(filePath);
                                 extractedFile.Attributes |= FileAttributes.ReadOnly;
                             }
 
-                            if(Path.GetExtension(entry.FileName) == ".dll" && entry.FileName.Contains("gx42"))
+                            /* WTF??
+                            if(Path.GetExtension(entry.FullName) == ".dll" && entry.FullName.Contains("gx42"))
                             {
-                                using(MD5 md5 = MD5.Create())
+                                using (MD5 md5 = MD5.Create())
                                 {
-                                    string fileName = Path.GetFileNameWithoutExtension(entry.FileName);
+                                    string fileName = Path.GetFileNameWithoutExtension(entry.FullName);
                                     Guid guid = new Guid(md5.ComputeHash(Encoding.Default.GetBytes(fileName)));
                                     Debug.Log(string.Format("Using guid: {0} for file: {1}", guid, fileName));
                                     File.WriteAllText(filePath + ".meta",
 @"fileFormatVersion: 2
 guid: GUID
 PluginImporter:
-  externalObjects: {}
-  serializedVersion: 2
-  iconMap: {}
-  executionOrder: {}
-  defineConstraints: []
-  isPreloaded: 0
-  isOverridable: 0
-  isExplicitlyReferenced: 0
-  validateReferences: 1
-  platformData:
-  - first:
-      Any: 
+    externalObjects: {}
+    serializedVersion: 2
+    iconMap: {}
+    executionOrder: {}
+    defineConstraints: []
+    isPreloaded: 0
+    isOverridable: 0
+    isExplicitlyReferenced: 0
+    validateReferences: 1
+    platformData:
+    - first:
+        Any: 
     second:
-      enabled: 1
-      settings: {}
-  - first:
-      Editor: Editor
+        enabled: 1
+        settings: {}
+    - first:
+        Editor: Editor
     second:
-      enabled: 0
-      settings:
+        enabled: 0
+        settings:
         DefaultValueInitialized: true
-  - first:
-      Windows Store Apps: WindowsStoreApps
+    - first:
+        Windows Store Apps: WindowsStoreApps
     second:
-      enabled: 0
-      settings:
+        enabled: 0
+        settings:
         CPU: AnyCPU
-  userData: 
-  assetBundleName: 
-  assetBundleVariant:".Replace("GUID", guid.ToString("N")));
+    userData: 
+    assetBundleName: 
+    assetBundleVariant:".Replace("GUID", guid.ToString("N")));
                                 }
-
-
                             }
+
+                            */
                         }
                     }
 
                     // copy the .nupkg inside the Unity project
-                    File.Copy(cachedPackagePath, Path.Combine(NugetConfigFile.RepositoryPath, string.Format("{0}/{1}.{2}.nupkg", package.InstallDir, package.Id, package.Version)), true);
+                    File.Copy(cachedPackagePath, Path.Combine(baseDirectory, string.Format("{0}.{1}.nupkg", package.Id, package.Version)), true);
                 }
                 else
                 {
@@ -1592,34 +1618,43 @@ PluginImporter:
         /// <returns>Stream containing the result.</returns>
         public static Stream RequestUrl(string url, string userName, string password, int? timeOut)
         {
-            HttpWebRequest getRequest = (HttpWebRequest)WebRequest.Create(url);
-            if (timeOut.HasValue)
+            try
             {
-                getRequest.Timeout = timeOut.Value;
-                getRequest.ReadWriteTimeout = timeOut.Value;
-            }
-
-            if (string.IsNullOrEmpty(password))
-            {
-                CredentialProviderResponse? creds = GetCredentialFromProvider(GetTruncatedFeedUri(getRequest.RequestUri));
-                if (creds.HasValue)
+                HttpWebRequest getRequest = (HttpWebRequest)WebRequest.Create(url);
+                if (timeOut.HasValue)
                 {
-                    userName = creds.Value.Username;
-                    password = creds.Value.Password;
+                    getRequest.Timeout = timeOut.Value;
+                    getRequest.ReadWriteTimeout = timeOut.Value;
                 }
-            }
 
-            if (password != null)
+                if (string.IsNullOrEmpty(password))
+                {
+                    CredentialProviderResponse? creds = GetCredentialFromProvider(GetTruncatedFeedUri(getRequest.RequestUri));
+                    if (creds.HasValue)
+                    {
+                        userName = creds.Value.Username;
+                        password = creds.Value.Password;
+                    }
+                }
+
+                if (password != null)
+                {
+                    // Send password as described by https://docs.microsoft.com/en-us/vsts/integrate/get-started/rest/basics.
+                    // This works with Visual Studio Team Services, but hasn't been tested with other authentication schemes so there may be additional work needed if there
+                    // are different kinds of authentication.
+                    getRequest.Headers.Add("Authorization", "Basic " + Convert.ToBase64String(System.Text.ASCIIEncoding.ASCII.GetBytes(string.Format("{0}:{1}", userName, password))));
+                }
+
+                LogVerbose("HTTP GET {0}", url);
+                Stream objStream = getRequest.GetResponse().GetResponseStream();
+                return objStream;
+            }
+            catch(Exception e)
             {
-                // Send password as described by https://docs.microsoft.com/en-us/vsts/integrate/get-started/rest/basics.
-                // This works with Visual Studio Team Services, but hasn't been tested with other authentication schemes so there may be additional work needed if there
-                // are different kinds of authentication.
-                getRequest.Headers.Add("Authorization", "Basic " + Convert.ToBase64String(System.Text.ASCIIEncoding.ASCII.GetBytes(string.Format("{0}:{1}", userName, password))));
-            }
+                Debug.LogException(e);
 
-            LogVerbose("HTTP GET {0}", url);
-            Stream objStream = getRequest.GetResponse().GetResponseStream();
-            return objStream;
+                return null;
+            }
         }
 
         /// <summary>
@@ -1680,34 +1715,29 @@ PluginImporter:
 
         internal static void CheckForUnnecessaryPackages()
         {
-            if (!Directory.Exists(NugetConfigFile.RepositoryPath))
+            if (!Directory.Exists(LocalNugetConfigFile.RepositoryPath))
             {
                 return;
             }
 
-            string[] directories = Directory.GetDirectories(NugetConfigFile.RepositoryPath, "*", SearchOption.TopDirectoryOnly);
+            string[] directories = Directory.GetDirectories(LocalNugetConfigFile.RepositoryPath, "*", SearchOption.TopDirectoryOnly);
             foreach (string folder in directories)
             {
-                var installed = false;
+                string pkgPath = Path.Combine(folder, $"{Path.GetFileName(folder)}.nupkg");
+                NugetPackage package = NugetPackage.FromNupkgFile(pkgPath);
 
-                var files = Directory.GetFiles(folder, "*.nupkg");
-                if (files.Length > 0)
+                bool installed = false;
+                foreach (NugetPackageIdentifier packageId in PackagesConfigFile.Packages)
                 {
-                    var name = Path.GetFileName(files[0]);
-                    foreach (var package in PackagesConfigFile.Packages)
+                    if (packageId.CompareTo(package) == 0)
                     {
-                        var packageName = string.Format("{0}.{1}.nupkg", package.Id, package.Version);
-                        if (name == packageName)
-                        {
-                            installed = true;
-                            break;
-                        }
+                        installed = true;
+                        break;
                     }
                 }
-
                 if (!installed)
                 {
-                    LogVerbose("---DELETE unnecessary package {0}", Path.GetFileName(folder));
+                    LogVerbose("---DELETE unnecessary package {0}", folder);
 
                     DeleteDirectory(folder);
                     DeleteFile(folder + ".meta");
