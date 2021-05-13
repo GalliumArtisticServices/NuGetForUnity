@@ -224,7 +224,7 @@
                             if (!GlobalNugetConfigFile.PackageSources.Exists(p => p.Name == add.Attribute("key").Value))
                             {
                                 int protocolVersion = 2;
-                                if(add.Attribute("protocolVersion") != null)
+                                if (add.Attribute("protocolVersion") != null)
                                 {
                                     protocolVersion = int.Parse(add.Attribute("protocolVersion").Value);
                                 }
@@ -236,7 +236,7 @@
                             }
                         }
 
-                        foreach(NugetPackageSource source in GlobalNugetConfigFile.PackageSources)
+                        foreach (NugetPackageSource source in GlobalNugetConfigFile.PackageSources)
                         {
                             packageSources.Add(source);
                         }
@@ -1292,7 +1292,7 @@
                 return true;
             }
 
-            if(package.GetType().Equals(typeof(NugetPackage)))
+            if (package.GetType().Equals(typeof(NugetPackage)))
             {
                 return Install((NugetPackage)package, refreshAssets);
             }
@@ -1435,7 +1435,7 @@
 
                         Stream objStream = RequestUrl(package.DownloadUrl, package.PackageSource.UserName, package.PackageSource.ExpandedPassword, timeOut: null);
 
-                        if(objStream == null)
+                        if (objStream == null)
                         {
                             return false;
                         }
@@ -1474,8 +1474,7 @@
                                 extractedFile.Attributes |= FileAttributes.ReadOnly;
                             }
 
-                            /* WTF??
-                            if(Path.GetExtension(entry.FullName) == ".dll" && entry.FullName.Contains("gx42"))
+                            if (Path.GetExtension(entry.FullName) == ".dll" && entry.FullName.Contains("gx42"))
                             {
                                 using (MD5 md5 = MD5.Create())
                                 {
@@ -1486,40 +1485,39 @@
 @"fileFormatVersion: 2
 guid: GUID
 PluginImporter:
-    externalObjects: {}
-    serializedVersion: 2
-    iconMap: {}
-    executionOrder: {}
-    defineConstraints: []
-    isPreloaded: 0
-    isOverridable: 0
-    isExplicitlyReferenced: 0
-    validateReferences: 1
-    platformData:
-    - first:
-        Any: 
+  externalObjects: {}
+  serializedVersion: 2
+  iconMap: {}
+  executionOrder: {}
+  defineConstraints: []
+  isPreloaded: 0
+  isOverridable: 0
+  isExplicitlyReferenced: 0
+  validateReferences: 1
+  platformData:
+  - first:
+      Any: 
     second:
-        enabled: 1
-        settings: {}
-    - first:
-        Editor: Editor
+      enabled: 1
+      settings: {}
+  - first:
+      Editor: Editor
     second:
-        enabled: 0
-        settings:
+      enabled: 0
+      settings:
         DefaultValueInitialized: true
-    - first:
-        Windows Store Apps: WindowsStoreApps
+  - first:
+      Windows Store Apps: WindowsStoreApps
     second:
-        enabled: 0
-        settings:
+      enabled: 0
+      settings:
         CPU: AnyCPU
-    userData: 
-    assetBundleName: 
-    assetBundleVariant:".Replace("GUID", guid.ToString("N")));
+  userData: 
+  assetBundleName: 
+  assetBundleVariant:
+".Replace("GUID", guid.ToString("N")));
                                 }
                             }
-
-                            */
                         }
                     }
 
@@ -1649,7 +1647,7 @@ PluginImporter:
                 Stream objStream = getRequest.GetResponse().GetResponseStream();
                 return objStream;
             }
-            catch(Exception e)
+            catch (Exception e)
             {
                 Debug.LogException(e);
 
