@@ -1294,7 +1294,11 @@
 
             if (package.GetType().Equals(typeof(NugetPackage)))
             {
-                return Install((NugetPackage)package, refreshAssets);
+                NugetPackage pkg = (NugetPackage)package;
+                if (!string.IsNullOrEmpty(pkg.DownloadUrl))
+                {
+                    return Install(pkg, refreshAssets);
+                }
             }
 
             NugetPackage foundPackage = GetSpecificPackage(package);
