@@ -4,7 +4,7 @@ using System.Runtime.Serialization;
 namespace NugetForUnity
 {
     [DataContract]
-    public class DependencyGroups
+    public class DependencyGroup
     {
         [DataMember(Name = "@id", IsRequired = false)]
         public string Url { get; set; }
@@ -20,10 +20,19 @@ namespace NugetForUnity
 
         public NugetFrameworkGroup ToNugetFrameworkGroup()
         {
-            List<NugetPackageIdentifier> dependencies = new List<NugetPackageIdentifier>();
-            for (int i = 0; i < Dependencies.Length; ++i)
+            if(TargetFramework == null)
             {
-                dependencies.Add(Dependencies[i].ToNugetPackageIdentifier());
+                // Hack for malformed Dep Groups
+                TargetFramework = "unity"; //".NETStandard2.0";
+            }
+
+            List<NugetPackageIdentifier> dependencies = new List<NugetPackageIdentifier>();
+            if (Dependencies != null)
+            {
+                for (int i = 0; i < Dependencies.Length; ++i)
+                {
+                    dependencies.Add(Dependencies[i].ToNugetPackageIdentifier());
+                }
             }
 
             return new NugetFrameworkGroup()
@@ -81,7 +90,7 @@ namespace NugetForUnity
         public Dependency[] Dependencies { get; set; }
 
         [DataMember(Name = "dependencyGroups", IsRequired = false)]
-        public DependencyGroups[] DependencyGroups { get; set; }
+        public DependencyGroup[] DependencyGroups { get; set; }
 
         [DataMember(Name = "description", IsRequired = false)]
         public string Description { get; set; }
@@ -156,6 +165,27 @@ namespace NugetForUnity
     }
 
     [DataContract]
+    public class NugetCatalogEntry
+    {
+        [DataMember(Name = "@id", IsRequired = false)]
+        public string Url { get; set; }
+
+        [DataMember(Name = "dependencyGroups", IsRequired = false)]
+        public DependencyGroup[] DependencyGroups { get; set; }
+
+        public List<NugetFrameworkGroup> ToFrameworkGroups()
+        {
+            List<NugetFrameworkGroup> groups = new List<NugetFrameworkGroup>();
+            for (int i = 0; i < DependencyGroups?.Length; ++i)
+            {
+                groups.Add(DependencyGroups[i].ToNugetFrameworkGroup());
+            }
+
+            return groups;
+        }
+    }
+
+    [DataContract]
     public class CatalogEntry
     {
         [DataMember(Name = "@id", IsRequired = false)]
@@ -168,7 +198,7 @@ namespace NugetForUnity
         public string Copyright { get; set; }
 
         [DataMember(Name = "dependencyGroups", IsRequired = false)]
-        public DependencyGroups[] DependencyGroups { get; set; }
+        public DependencyGroup[] DependencyGroups { get; set; }
 
         [DataMember(Name = "description", IsRequired = false)]
         public string Description { get; set; }

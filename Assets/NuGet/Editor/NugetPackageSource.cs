@@ -455,6 +455,8 @@
 
                     for(int i = 0; i < response.Data.Length; ++i)
                     {
+                        // TODO: Check if deps is null and get them
+
                         NugetPackage package = response.Data[i].ToNugetPackage();
                         package.PackageSource = this;
 
@@ -469,13 +471,33 @@
                         if (package.DownloadUrl.Contains("github.com"))
                         {
                             ser = new DataContractJsonSerializer(typeof(NugetPackageCatalog<CatalogEntry>));
-                            NugetPackageCatalog<CatalogEntry> catalog = ser.ReadObject(catalogStream) as NugetPackageCatalog<CatalogEntry>;
+                            NugetPackageCatalog<CatalogEntry> catalog = ser.ReadObject(catalogStream) as NugetPackageCatalog<CatalogEntry>; 
                             package.DownloadUrl = catalog.PackageContent;
                         }
                         else
                         {
                             ser = new DataContractJsonSerializer(typeof(NugetPackageCatalog<string>));
                             NugetPackageCatalog<string> catalog = ser.ReadObject(catalogStream) as NugetPackageCatalog<string>;
+
+                            if(package.Dependencies.Count == 0 && catalog.CatalogEntry.GetType() == typeof(string))
+                            {
+                                // TODO: Pull the dependencies from the catalog.CatalogEntry
+                                Stream c = NugetHelper.RequestUrl(catalog.CatalogEntry, username, password, timeOut: 5000);
+
+                                ser = new DataContractJsonSerializer(typeof(NugetCatalogEntry));
+                                NugetCatalogEntry cat = ser.ReadObject(c) as NugetCatalogEntry;
+
+                                NugetPackageCatalog<NugetCatalogEntry> newCatalog = new NugetPackageCatalog<NugetCatalogEntry>()
+                                {
+                                    Id = catalog.Id,
+                                    PackageContent = catalog.PackageContent
+                                };
+
+                                newCatalog.CatalogEntry = cat;
+
+                                package.Dependencies = cat.ToFrameworkGroups();
+                            }
+
                             package.DownloadUrl = catalog.PackageContent;
                         }
 
@@ -510,6 +532,11 @@
 
             using (Stream responseStream = NugetHelper.RequestUrl(url, username, password, timeOut: 5000))
             {
+                if(responseStream == null)
+                {
+                    return packages;
+                }
+
                 if (ProtocolVersion == 2)
                 {
                     using (StreamReader streamReader = new StreamReader(responseStream))
