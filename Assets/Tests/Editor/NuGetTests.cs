@@ -1,6 +1,7 @@
 ﻿using NUnit.Framework;
 using NugetForUnity;
 using System.IO;
+using UnityEditor;
 
 public class NuGetTests
 {
@@ -56,7 +57,7 @@ public class NuGetTests
     public void InstallBootstrapCSSTest()
     {
         // disable the cache for now to force getting the lowest version of the dependency
-        NugetHelper.NugetConfigFile.InstallFromCache = false;
+        NugetHelper.LocalNugetConfigFile.InstallFromCache = false;
 
         var bootstrap337 = new NugetPackageIdentifier("bootstrap", "3.3.7");
 
@@ -89,7 +90,7 @@ public class NuGetTests
         Assert.IsFalse(NugetHelper.IsInstalled(jQuery311), "The package is STILL installed: {0} {1}", jQuery311.Id, jQuery311.Version);
 
         // turn cache back on
-        NugetHelper.NugetConfigFile.InstallFromCache = true;
+        NugetHelper.LocalNugetConfigFile.InstallFromCache = true;
     }
 
     [Test]
@@ -120,10 +121,10 @@ public class NuGetTests
         NugetHelper.InstallIdentifier(signalRClient);
         Assert.IsTrue(NugetHelper.IsInstalled(signalRClient), "The package was NOT installed: {0} {1}", signalRClient.Id, signalRClient.Version);
 
-        var directory45 = Path.Combine(NugetHelper.NugetConfigFile.RepositoryPath, string.Format("{0}.{1}\\lib\\net45", signalRClient.Id, signalRClient.Version));
+        var directory45 = Path.Combine(NugetHelper.LocalNugetConfigFile.RepositoryPath, string.Format("{0}.{1}\\lib\\net45", signalRClient.Id, signalRClient.Version));
 
         // SignalR 2.2.2 only contains .NET 4.0 and .NET 4.5 libraries, so it should install .NET 4.5 when using .NET 4.6 in Unity, and be empty in other cases
-        if ((int)NugetHelper.DotNetVersion == 3) // 3 = NET_4_6
+        if (PlayerSettings.GetApiCompatibilityLevel(EditorUserBuildSettings.selectedBuildTargetGroup) == ApiCompatibilityLevel.NET_4_6) // 3 = NET_4_6
         {
             Assert.IsTrue(Directory.Exists(directory45), "The directory does NOT exist: {0}", directory45);
         }
@@ -135,6 +136,24 @@ public class NuGetTests
         // cleanup and uninstall everything
         NugetHelper.UninstallAll();
         Assert.IsFalse(NugetHelper.IsInstalled(signalRClient), "The package is STILL installed: {0} {1}", signalRClient.Id, signalRClient.Version);
+    }
+
+    [Test]
+    [TestCase("1.0.0-rc1", "1.0.0")]
+    [TestCase("1.0.0-rc1", "1.0.0-rc2")]
+    [TestCase("1.2.3", "1.2.4")]
+    [TestCase("1.2.3", "1.3.0")]
+    [TestCase("1.2.3", "2.0.0")]
+    [TestCase("1.2.3-rc1", "1.2.4")]
+    [TestCase("1.2.3-rc1", "1.3.0")]
+    [TestCase("1.2.3-rc1", "2.0.0")]
+    public void VersionComparison(string smallerVersion, string greaterVersion)
+    {
+        var smallerPackage = new NugetPackage { Id = "TestPackage", Version = smallerVersion };
+        var greaterPackage = new NugetPackage { Id = "TestPackage", Version = greaterVersion };
+
+        Assert.IsTrue(smallerPackage.CompareTo(greaterPackage) < 0, "{0} was NOT smaller than {1}", smallerVersion, greaterVersion);
+        Assert.IsTrue(greaterPackage.CompareTo(smallerPackage) > 0, "{0} was NOT greater than {1}", greaterVersion, smallerVersion);
     }
 
     [Test]

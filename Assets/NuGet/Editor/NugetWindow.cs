@@ -64,16 +64,6 @@
         private bool showPrereleaseUpdates;
 
         /// <summary>
-        /// The width to use for the install/uninstall/update/downgrade button
-        /// </summary>
-        private readonly GUILayoutOption installButtonWidth = GUILayout.Width(180);
-
-        /// <summary>
-        /// The height to use for the install/uninstall/update/downgrade button
-        /// </summary>
-        private readonly GUILayoutOption installButtonHeight = GUILayout.Height(27);
-
-        /// <summary>
         /// The search term to search the online packages for.
         /// </summary>
         private string onlineSearchTerm = "Search";
@@ -162,12 +152,17 @@
         [MenuItem("NuGet/Version " + NugetPreferences.NuGetForUnityVersion, false, 10)]
         protected static void DisplayVersion()
         {
+            // open the preferences window
+#if UNITY_2018_1_OR_NEWER
+            SettingsService.OpenUserPreferences("Preferences/NuGet For Unity");
+#else
+
             var assembly = System.Reflection.Assembly.GetAssembly(typeof(EditorWindow));
             var preferencesWindow = assembly.GetType("UnityEditor.PreferencesWindow");
-            var preferencesWindowSection = assembly.GetType("UnityEditor.PreferencesWindow+Section"); // access nested class via + instead of .         
+            var preferencesWindowSection = assembly.GetType("UnityEditor.PreferencesWindow+Section"); // access nested class via + instead of .     
 
-            // open the preferences window
             EditorWindow preferencesEditorWindow = EditorWindow.GetWindowWithRect(preferencesWindow, new Rect(100f, 100f, 500f, 400f), true, "Unity Preferences");
+
             //preferencesEditorWindow.m_Parent.window.m_DontSaveToLayout = true; //<-- Unity's implementation also does this
 
             // Get the flag to see if custom sections have already been added
@@ -214,6 +209,7 @@
             //var selectedSectionIndexGetter = selectedSectionIndex.GetGetMethod(true);
             //object index = selectedSectionIndexGetter.Invoke(preferencesEditorWindow, null);
             //Debug.LogFormat("Selected Index = {0}", index);
+#endif
         }
 
         /// <summary>
@@ -323,6 +319,11 @@
 
             try
             {
+                if (forceFullRefresh)
+                {
+                    NugetHelper.ClearCachedCredentials();
+                }
+
                 // reload the NuGet.config file, in case it was changed after Unity opened, but before the manager window opened (now)
                 NugetHelper.LoadNugetConfigFile();
 
@@ -454,7 +455,7 @@
         {
             GUIStyle style = new GUIStyle();
             Color backgroundColor = EditorGUIUtility.isProSkin ? new Color(0.3f, 0.3f, 0.3f) : new Color(0.6f, 0.6f, 0.6f);
-            style.normal.background = MakeTex(16, 16, backgroundColor); 
+            style.normal.background = MakeTex(16, 16, backgroundColor);
             return style;
         }
 
@@ -466,7 +467,7 @@
         {
             GUIStyle style = new GUIStyle();
             Color32 backgroundColor = EditorGUIUtility.isProSkin ? new Color32(56, 56, 56, 255) : new Color32(194, 194, 194, 255);
-            style.normal.background = MakeTex(16, 16, backgroundColor); 
+            style.normal.background = MakeTex(16, 16, backgroundColor);
             return style;
         }
 
@@ -731,6 +732,11 @@
                         NugetHelper.UpdateInstalledPackages();
                         UpdateUpdatePackages();
                     }
+
+                    if (GUILayout.Button("Refresh", GUILayout.Width(60)))
+                    {
+                        Refresh(true);
+                    }
                 }
                 EditorGUILayout.EndHorizontal();
 
@@ -771,6 +777,8 @@
             EditorGUILayout.EndVertical();
         }
 
+        Dictionary<string, bool> foldouts = new Dictionary<string, bool>();
+
         /// <summary>
         /// Draws the given <see cref="NugetPackage"/>.
         /// </summary>
@@ -790,11 +798,12 @@
                 EditorGUILayout.BeginHorizontal();
                 {
                     const int iconSize = 32;
-                    const int leftPadding = 5;
+                    int padding = EditorStyles.label.padding.vertical;
                     Rect rect = GUILayoutUtility.GetRect(iconSize, iconSize);
-                    // only use GetRect's Y position.  It doesn't correctly set the width or X position.
-                    rect.x = leftPadding;
-                    rect.y += 3;
+                    // only use GetRect's Y position.  It doesn't correctly set the width, height or X position.
+
+                    rect.x = padding;
+                    rect.y += padding;
                     rect.width = iconSize;
                     rect.height = iconSize;
 
@@ -802,28 +811,59 @@
                     {
                         GUI.DrawTexture(rect, package.Icon, ScaleMode.StretchToFill);
                     }
-                    else
+                    else if(defaultIcon != null)
                     {
                         GUI.DrawTexture(rect, defaultIcon, ScaleMode.StretchToFill);
                     }
 
-                    rect = GUILayoutUtility.GetRect(position.width / 2 - (iconSize + leftPadding), 20);
-                    rect.x = iconSize + leftPadding;
-                    rect.y += 10;
+                    rect.x = iconSize + 2 * padding;
+                    rect.width = position.width / 2 - (iconSize + padding);
+                    rect.y -= padding; // This will leave the text aligned with the top of the image
+
 
                     EditorStyles.label.fontStyle = FontStyle.Bold;
-                    EditorStyles.label.fontSize = 14;
-                    ////EditorGUILayout.LabelField(string.Format("{1} [{0}]", package.Version, package.Id), GUILayout.Height(20), GUILayout.Width(position.width / 2 - 32));
-                    GUI.Label(rect, string.Format("{1} [{0}]", package.Version, package.Title), EditorStyles.label);
+                    EditorStyles.label.fontSize = 16;
+
+                    Vector2 idSize = EditorStyles.label.CalcSize(new GUIContent(package.Id));
+                    rect.y += (iconSize / 2 - idSize.y / 2) + padding;
+                    GUI.Label(rect, package.Id, EditorStyles.label);
+                    rect.x += idSize.x;
+
                     EditorStyles.label.fontSize = 10;
                     EditorStyles.label.fontStyle = FontStyle.Normal;
+
+                    Vector2 versionSize = EditorStyles.label.CalcSize(new GUIContent(package.Version));
+                    rect.y += (idSize.y - versionSize.y - padding / 2);
+
+                    if (!string.IsNullOrEmpty(package.Authors))
+                    {
+                        string authorLabel = string.Format("by {0}", package.Authors);
+                        Vector2 size = EditorStyles.label.CalcSize(new GUIContent(authorLabel));
+                        GUI.Label(rect, authorLabel, EditorStyles.label);
+                        rect.x += size.x;
+                    }
+
+                    if (package.DownloadCount > 0)
+                    {
+                        string downloadLabel = string.Format("{0} downloads", package.DownloadCount.ToString("#,#"));
+                        Vector2 size = EditorStyles.label.CalcSize(new GUIContent(downloadLabel));
+                        GUI.Label(rect, downloadLabel, EditorStyles.label);
+                        rect.x += size.x;
+                    }
                 }
-                EditorGUILayout.EndHorizontal();
+
+                GUILayout.FlexibleSpace();
+                if (installed != null && installed.Version != package.Version)
+                {
+                    GUILayout.Label(string.Format("Current Version {0}", installed.Version));
+                }
+                GUILayout.Label(string.Format("Version {0}", package.Version));
+
 
                 if (installedPackages.Contains(package))
                 {
                     // This specific version is installed
-                    if (GUILayout.Button("Uninstall", installButtonWidth, installButtonHeight))
+                    if (GUILayout.Button("Uninstall"))
                     {
                         // TODO: Perhaps use a "mark as dirty" system instead of updating all of the data all the time? 
                         NugetHelper.Uninstall(package);
@@ -838,7 +878,7 @@
                         if (installed < package)
                         {
                             // An older version is installed
-                            if (GUILayout.Button(string.Format("Update to [{0}]", package.Version), installButtonWidth, installButtonHeight))
+                            if (GUILayout.Button("Update"))
                             {
                                 NugetHelper.Update(installed, package);
                                 NugetHelper.UpdateInstalledPackages();
@@ -848,7 +888,7 @@
                         else if (installed > package)
                         {
                             // A newer version is installed
-                            if (GUILayout.Button(string.Format("Downgrade to [{0}]", package.Version), installButtonWidth, installButtonHeight))
+                            if (GUILayout.Button("Downgrade"))
                             {
                                 NugetHelper.Update(installed, package);
                                 NugetHelper.UpdateInstalledPackages();
@@ -858,7 +898,7 @@
                     }
                     else
                     {
-                        if (GUILayout.Button("Install", installButtonWidth, installButtonHeight))
+                        if (GUILayout.Button("Install"))
                         {
                             NugetHelper.InstallIdentifier(package);
                             AssetDatabase.Refresh();
@@ -867,159 +907,202 @@
                         }
                     }
                 }
+                EditorGUILayout.EndHorizontal();
             }
             EditorGUILayout.EndHorizontal();
 
+            EditorGUILayout.Space();
             EditorGUILayout.BeginHorizontal();
             {
                 EditorGUILayout.BeginVertical();
                 {
-                    // Show the package description
+                    // Show the package details
                     EditorStyles.label.wordWrap = true;
                     EditorStyles.label.fontStyle = FontStyle.Normal;
-                    EditorGUILayout.LabelField(string.Format("{0}", package.Description));
 
-                    // Show project URL link
-                    if (!string.IsNullOrEmpty(package.ProjectUrl))
+                    string summary = package.Summary;
+                    if (string.IsNullOrEmpty(summary))
                     {
-                        GUILayoutLink(package.ProjectUrl);
-                        GUILayout.Space(4f);
+                        summary = package.Description;
                     }
 
-                    // Show the package release notes
-                    if (!string.IsNullOrEmpty(package.ReleaseNotes))
+                    if (!package.Title.Equals(package.Id, StringComparison.InvariantCultureIgnoreCase))
                     {
-                        EditorStyles.label.wordWrap = true;
-                        EditorStyles.label.fontStyle = FontStyle.Bold;
-                        EditorGUILayout.LabelField(string.Format("Release Notes:"));
-                        EditorStyles.label.fontStyle = FontStyle.Normal;
-                        EditorGUILayout.LabelField(string.Format("{0}", package.ReleaseNotes));
+                        summary = string.Format("{0} - {1}", package.Title, summary);
                     }
 
-                    // Show the dependencies
-                    if (package.Dependencies.Count > 0)
+                    if (summary.Length >= 240)
                     {
-                        EditorStyles.label.wordWrap = true;
-                        EditorStyles.label.fontStyle = FontStyle.Italic;
-                        StringBuilder builder = new StringBuilder();
-                        foreach (var dependency in package.Dependencies)
+                        summary = string.Format("{0}...", summary.Substring(0, 237));
+                    }
+
+                    EditorGUILayout.LabelField(summary);
+
+                    bool detailsFoldout;
+                    string detailsFoldoutId = string.Format("{0}.{1}", package.Id, "Details");
+                    if (!foldouts.TryGetValue(detailsFoldoutId, out detailsFoldout))
+                    {
+                        foldouts[detailsFoldoutId] = detailsFoldout;
+                    }
+                    detailsFoldout = EditorGUILayout.Foldout(detailsFoldout, "Details");
+                    foldouts[detailsFoldoutId] = detailsFoldout;
+
+                    if (detailsFoldout)
+                    {
+                        EditorGUI.indentLevel++;
+                        if (!string.IsNullOrEmpty(package.Description))
                         {
-                            builder.Append(string.Format(" {0} {1};", dependency.Id, dependency.Version));
+                            EditorGUILayout.LabelField("Description", EditorStyles.boldLabel);
+                            EditorGUILayout.LabelField(package.Description);
                         }
-                        EditorGUILayout.Space();
-                        EditorGUILayout.LabelField(string.Format("Depends on:{0}", builder.ToString()));
-                        EditorStyles.label.fontStyle = FontStyle.Normal;
-                    }
 
-                    // Create the style for putting a box around the 'Clone' button
-                    var cloneButtonBoxStyle = new GUIStyle("box");
-                    cloneButtonBoxStyle.stretchWidth = false;
-                    cloneButtonBoxStyle.margin.top = 0;
-                    cloneButtonBoxStyle.margin.bottom = 0;
-                    cloneButtonBoxStyle.padding.bottom = 4;
-
-                    var normalButtonBoxStyle = new GUIStyle(cloneButtonBoxStyle);
-                    normalButtonBoxStyle.normal.background = packageStyle.normal.background;
-
-                    bool showCloneWindow = openCloneWindows.Contains(package);
-                    cloneButtonBoxStyle.normal.background = showCloneWindow ? contrastStyle.normal.background : packageStyle.normal.background;
-
-                    // Create a simillar style for the 'Clone' window
-                    var cloneWindowStyle = new GUIStyle(cloneButtonBoxStyle);
-                    cloneWindowStyle.padding = new RectOffset(6, 6, 2, 6);
-
-                    // Show button bar
-                    EditorGUILayout.BeginHorizontal();
-                    {
-                        if (package.RepositoryType == RepositoryType.Git || package.RepositoryType == RepositoryType.TfsGit)
+                        if (!string.IsNullOrEmpty(package.ReleaseNotes))
                         {
-                            if (!string.IsNullOrEmpty(package.RepositoryUrl))
-                            {
-                                EditorGUILayout.BeginHorizontal(cloneButtonBoxStyle);
-                                {
-                                    var cloneButtonStyle = new GUIStyle(GUI.skin.button);
-                                    cloneButtonStyle.normal = showCloneWindow ? cloneButtonStyle.active : cloneButtonStyle.normal;
-                                    if (GUILayout.Button("Clone", cloneButtonStyle, GUILayout.ExpandWidth(false)))
-                                    {
-                                        showCloneWindow = !showCloneWindow;
-                                    }
+                            EditorGUILayout.LabelField("Release Notes", EditorStyles.boldLabel);
+                            EditorGUILayout.LabelField(package.ReleaseNotes);
+                        }
 
-                                    if (showCloneWindow)
-                                        openCloneWindows.Add(package);
-                                    else
-                                        openCloneWindows.Remove(package);
+                        // Show project URL link
+                        if (!string.IsNullOrEmpty(package.ProjectUrl))
+                        {
+                            EditorGUILayout.LabelField("Project Url", EditorStyles.boldLabel);
+                            GUILayoutLink(package.ProjectUrl);
+                            GUILayout.Space(4f);
+                        }
+
+
+                        // Show the dependencies
+                        if (package.Dependencies.Count > 0)
+                        {
+                            NugetFrameworkGroup frameworkGroup = NugetHelper.GetBestDependencyFrameworkGroupForCurrentSettings(package);
+                            if (frameworkGroup.Dependencies.Count > 0)
+                            {
+                                EditorStyles.label.wordWrap = true;
+                                EditorStyles.label.fontStyle = FontStyle.Italic;
+                                StringBuilder builder = new StringBuilder();
+
+
+                                foreach (var dependency in frameworkGroup.Dependencies)
+                                {
+                                    builder.Append(string.Format(" {0} {1};", dependency.Id, dependency.Version));
+                                }
+                                EditorGUILayout.Space();
+                                EditorGUILayout.LabelField(string.Format("Depends on:{0}", builder.ToString()));
+                                EditorStyles.label.fontStyle = FontStyle.Normal;
+                            }
+                        }
+
+                        // Create the style for putting a box around the 'Clone' button
+                        var cloneButtonBoxStyle = new GUIStyle("box");
+                        cloneButtonBoxStyle.stretchWidth = false;
+                        cloneButtonBoxStyle.margin.top = 0;
+                        cloneButtonBoxStyle.margin.bottom = 0;
+                        cloneButtonBoxStyle.padding.bottom = 4;
+
+                        var normalButtonBoxStyle = new GUIStyle(cloneButtonBoxStyle);
+                        normalButtonBoxStyle.normal.background = packageStyle.normal.background;
+
+                        bool showCloneWindow = openCloneWindows.Contains(package);
+                        cloneButtonBoxStyle.normal.background = showCloneWindow ? contrastStyle.normal.background : packageStyle.normal.background;
+
+                        // Create a simillar style for the 'Clone' window
+                        var cloneWindowStyle = new GUIStyle(cloneButtonBoxStyle);
+                        cloneWindowStyle.padding = new RectOffset(6, 6, 2, 6);
+
+                        // Show button bar
+                        EditorGUILayout.BeginHorizontal();
+                        {
+                            if (package.RepositoryType == RepositoryType.Git || package.RepositoryType == RepositoryType.TfsGit)
+                            {
+                                if (!string.IsNullOrEmpty(package.RepositoryUrl))
+                                {
+                                    EditorGUILayout.BeginHorizontal(cloneButtonBoxStyle);
+                                    {
+                                        var cloneButtonStyle = new GUIStyle(GUI.skin.button);
+                                        cloneButtonStyle.normal = showCloneWindow ? cloneButtonStyle.active : cloneButtonStyle.normal;
+                                        if (GUILayout.Button("Clone", cloneButtonStyle, GUILayout.ExpandWidth(false)))
+                                        {
+                                            showCloneWindow = !showCloneWindow;
+                                        }
+
+                                        if (showCloneWindow)
+                                            openCloneWindows.Add(package);
+                                        else
+                                            openCloneWindows.Remove(package);
+                                    }
+                                    EditorGUILayout.EndHorizontal();
+                                }
+                            }
+
+                            if (!string.IsNullOrEmpty(package.LicenseUrl) && package.LicenseUrl != "http://your_license_url_here")
+                            {
+                                // Creaete a box around the license button to keep it alligned with Clone button
+                                EditorGUILayout.BeginHorizontal(normalButtonBoxStyle);
+                                // Show the license button
+                                if (GUILayout.Button("View License", GUILayout.ExpandWidth(false)))
+                                {
+                                    Application.OpenURL(package.LicenseUrl);
                                 }
                                 EditorGUILayout.EndHorizontal();
                             }
                         }
+                        EditorGUILayout.EndHorizontal();
 
-                        if (!string.IsNullOrEmpty(package.LicenseUrl) && package.LicenseUrl != "http://your_license_url_here")
+                        if (showCloneWindow)
                         {
-                            // Creaete a box around the license button to keep it alligned with Clone button
-                            EditorGUILayout.BeginHorizontal(normalButtonBoxStyle);
-                            // Show the license button
-                            if (GUILayout.Button("View License", GUILayout.ExpandWidth(false)))
+                            EditorGUILayout.BeginVertical(cloneWindowStyle);
                             {
-                                Application.OpenURL(package.LicenseUrl);
-                            }
-                            EditorGUILayout.EndHorizontal();
-                        }
-                    }
-                    EditorGUILayout.EndHorizontal();
+                                // Clone latest label
+                                EditorGUILayout.BeginHorizontal();
+                                GUILayout.Space(20f);
+                                EditorGUILayout.LabelField("clone latest");
+                                EditorGUILayout.EndHorizontal();
 
-                    if (showCloneWindow)
-                    {
-                        EditorGUILayout.BeginVertical(cloneWindowStyle);
-                        {
-                            // Clone latest label
-                            EditorGUILayout.BeginHorizontal();
-                            GUILayout.Space(20f);
-                            EditorGUILayout.LabelField("clone latest");
-                            EditorGUILayout.EndHorizontal();
-
-                            // Clone latest row
-                            EditorGUILayout.BeginHorizontal();
-                            {
-                                if (GUILayout.Button("Copy", GUILayout.ExpandWidth(false)))
+                                // Clone latest row
+                                EditorGUILayout.BeginHorizontal();
                                 {
-                                    GUI.FocusControl(package.Id + package.Version + "repoUrl");
-                                    GUIUtility.systemCopyBuffer = package.RepositoryUrl;
+                                    if (GUILayout.Button("Copy", GUILayout.ExpandWidth(false)))
+                                    {
+                                        GUI.FocusControl(package.Id + package.Version + "repoUrl");
+                                        GUIUtility.systemCopyBuffer = package.RepositoryUrl;
+                                    }
+
+                                    GUI.SetNextControlName(package.Id + package.Version + "repoUrl");
+                                    EditorGUILayout.TextField(package.RepositoryUrl);
                                 }
+                                EditorGUILayout.EndHorizontal();
 
-                                GUI.SetNextControlName(package.Id + package.Version + "repoUrl");
-                                EditorGUILayout.TextField(package.RepositoryUrl);
-                            }
-                            EditorGUILayout.EndHorizontal();
+                                // Clone @ commit label
+                                GUILayout.Space(4f);
+                                EditorGUILayout.BeginHorizontal();
+                                GUILayout.Space(20f);
+                                EditorGUILayout.LabelField("clone @ commit");
+                                EditorGUILayout.EndHorizontal();
 
-                            // Clone @ commit label
-                            GUILayout.Space(4f);
-                            EditorGUILayout.BeginHorizontal();
-                            GUILayout.Space(20f);
-                            EditorGUILayout.LabelField("clone @ commit");
-                            EditorGUILayout.EndHorizontal();
-
-                            // Clone @ commit row
-                            EditorGUILayout.BeginHorizontal();
-                            {
-                                // Create the three commands a user will need to run to get the repo @ the commit. Intentionally leave off the last newline for better UI appearance
-                                string commands = string.Format("git clone {0} {1} --no-checkout{2}cd {1}{2}git checkout {3}",  package.RepositoryUrl, package.Id, Environment.NewLine, package.RepositoryCommit);
-
-                                if (GUILayout.Button("Copy", GUILayout.ExpandWidth(false)))
+                                // Clone @ commit row
+                                EditorGUILayout.BeginHorizontal();
                                 {
-                                    GUI.FocusControl(package.Id + package.Version + "commands");
+                                    // Create the three commands a user will need to run to get the repo @ the commit. Intentionally leave off the last newline for better UI appearance
+                                    string commands = string.Format("git clone {0} {1} --no-checkout{2}cd {1}{2}git checkout {3}", package.RepositoryUrl, package.Id, Environment.NewLine, package.RepositoryCommit);
 
-                                    // Add a newline so the last command will execute when pasted to the CL
-                                    GUIUtility.systemCopyBuffer = (commands + Environment.NewLine);
+                                    if (GUILayout.Button("Copy", GUILayout.ExpandWidth(false)))
+                                    {
+                                        GUI.FocusControl(package.Id + package.Version + "commands");
+
+                                        // Add a newline so the last command will execute when pasted to the CL
+                                        GUIUtility.systemCopyBuffer = (commands + Environment.NewLine);
+                                    }
+
+                                    EditorGUILayout.BeginVertical();
+                                    GUI.SetNextControlName(package.Id + package.Version + "commands");
+                                    EditorGUILayout.TextArea(commands);
+                                    EditorGUILayout.EndVertical();
                                 }
-
-                                EditorGUILayout.BeginVertical();
-                                GUI.SetNextControlName(package.Id + package.Version + "commands");
-                                EditorGUILayout.TextArea(commands);
-                                EditorGUILayout.EndVertical();
+                                EditorGUILayout.EndHorizontal();
                             }
-                            EditorGUILayout.EndHorizontal();
+                            EditorGUILayout.EndVertical();
                         }
-                        EditorGUILayout.EndVertical();
+                        EditorGUI.indentLevel--;
                     }
 
                     EditorGUILayout.Separator();
@@ -1027,12 +1110,7 @@
                 }
                 EditorGUILayout.EndVertical();
 
-                if (installed != null)
-                {
-                    GUIStyle labelStyle = new GUIStyle(EditorStyles.label);
-                    labelStyle.alignment = TextAnchor.UpperRight;
-                    GUILayout.Label(string.Format("currently [{0}]  ", installed.Version), labelStyle, installButtonWidth);
-                }
+
             }
             EditorGUILayout.EndHorizontal();
         }
@@ -1050,6 +1128,15 @@
             string formattedUrl = string.Format(colorFormatString, url);
             string formattedUnderline = string.Format(colorFormatString, underline);
             var urlRect = GUILayoutUtility.GetRect(new GUIContent(url), hyperLinkStyle);
+
+            // Update rect for indentation
+            {
+                var indentedUrlRect = EditorGUI.IndentedRect(urlRect);
+                float delta = indentedUrlRect.x - urlRect.x;
+                indentedUrlRect.width += delta;
+                urlRect = indentedUrlRect;
+            }
+
             GUI.Label(urlRect, formattedUrl, hyperLinkStyle);
             GUI.Label(urlRect, formattedUnderline, hyperLinkStyle);
 

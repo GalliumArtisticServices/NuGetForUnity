@@ -9,7 +9,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>CreateDLL</RootNamespace>
     <AssemblyName>NuGetForUnity</AssemblyName>
-    <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.7.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <TargetFrameworkProfile />
   </PropertyGroup>
@@ -21,6 +21,7 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -29,21 +30,22 @@
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="DotNetZip">
-      <HintPath>..\Assets\NuGet\Editor\DotNetZip.dll</HintPath>
-    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.ServiceModel.Web" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Xml" />
-    <Reference Include="UnityEngine">
-      <HintPath>..\..\..\..\..\Applications\Unity\Hub\Editor\2019.1.4f1\Unity.app\Contents\Managed\UnityEngine.dll</HintPath>
-    </Reference>
     <Reference Include="UnityEditor">
-      <HintPath>..\..\..\..\..\Applications\Unity\Hub\Editor\2019.1.4f1\Unity.app\Contents\Managed\UnityEditor.dll</HintPath>
+      <HintPath>..\..\..\..\..\Applications\Unity\Hub\Editor\2019.4.10f1\Unity.app\Contents\Managed\UnityEditor.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>..\..\..\..\..\Applications\Unity\Hub\Editor\2019.4.10f1\Unity.app\Contents\Managed\UnityEngine.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
@@ -61,6 +63,9 @@
     </Compile>
     <Compile Include="..\Assets\NuGet\Editor\NugetODataResponse.cs">
       <Link>NugetODataResponse.cs</Link>
+    </Compile>
+    <Compile Include="..\Assets\NuGet\Editor\NugetJsonResponse.cs">
+      <Link>NugetJsonResponse.cs</Link>
     </Compile>
     <Compile Include="..\Assets\NuGet\Editor\NugetPackage.cs">
       <Link>NugetPackage.cs</Link>

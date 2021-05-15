@@ -6,7 +6,7 @@
     using System.IO;
     using System.Linq;
     using System.Net;
-    using System.Xml;
+    using System.Runtime.Serialization.Json;
     using System.Xml.Linq;
     using Debug = UnityEngine.Debug;
 
@@ -25,6 +25,8 @@
         /// </summary>
         public string SavedPath { get; set; }
 
+        public int ProtocolVersion { get; set; }
+
         /// <summary>
         /// Gets path, with the values of environment variables expanded.
         /// </summary>
@@ -32,7 +34,13 @@
         {
             get
             {
-                return Environment.ExpandEnvironmentVariables(SavedPath);
+                string path = Environment.ExpandEnvironmentVariables(SavedPath);
+                if (!path.StartsWith("http") && path != "(Aggregate source)" && !Path.IsPathRooted(path))
+                {
+                    path = Path.Combine(Path.GetDirectoryName(NugetHelper.NugetConfigFilePath), path);
+                }
+
+                return path;
             }
         }
 
@@ -87,19 +95,20 @@
         /// <summary>
         /// Initializes a new instance of the <see cref="NugetPackageSource"/> class.
         /// </summary>
-        /// <param name="name">The name of the package source.</param>
-        /// <param name="path">The path to the package source.</param>
-        public NugetPackageSource(string name, string path)
+        /// <param name="name"></param>
+        /// <param name="path"></param>
+        /// <param name="protocolVersion"></param>
+        public NugetPackageSource(string name, string path, int protocolVersion)
         {
             Name = name;
             SavedPath = path;
             IsLocalPath = !ExpandedPath.StartsWith("http");
             IsEnabled = true;
+            ProtocolVersion = protocolVersion;
         }
 
         /// <summary>
         /// Gets a NugetPackage from the NuGet server that matches (or is in range of) the <see cref="NugetPackageIdentifier"/> given.
-        /// If an exact match isn't found, it selects the next closest version available.
         /// </summary>
         /// <param name="package">The <see cref="NugetPackageIdentifier"/> containing the ID and Version of the package to get.</param>
         /// <returns>The retrieved package, if there is one.  Null if no matching package was found.</returns>
@@ -109,62 +118,62 @@
 
             if (IsLocalPath)
             {
-                string localPackagePath = System.IO.Path.Combine(ExpandedPath, string.Format("./{0}.{1}.nupkg", package.Id, package.Version));
-                if (File.Exists(localPackagePath))
+                if (!package.HasVersionRange)
                 {
-                    NugetPackage localPackage = NugetPackage.FromNupkgFile(localPackagePath);
-                    foundPackages = new List<NugetPackage> { localPackage };
+                    string localPackagePath = Path.Combine(ExpandedPath, string.Format("./{0}.{1}.nupkg", package.Id, package.Version));
+                    if (File.Exists(localPackagePath))
+                    {
+                        NugetPackage localPackage = NugetPackage.FromNupkgFile(localPackagePath);
+                        foundPackages = new List<NugetPackage> { localPackage };
+                    }
+                    else { foundPackages = new List<NugetPackage>(); }
                 }
                 else
                 {
-                    // TODO: Sort the local packages?  Currently assuming they are in alphabetical order due to the filesystem.
                     // TODO: Optimize to no longer use GetLocalPackages, since that loads the .nupkg itself
-
-                    // Try to find later versions of the same package
-                    var packages = GetLocalPackages(package.Id, true, true);
-                    foundPackages = new List<NugetPackage>(packages.SkipWhile(x => !package.InRange(x)));
-                  }
+                    foundPackages = GetLocalPackages(package.Id, true, true);
+                }
             }
             else
             {
-                // See here: http://www.odata.org/documentation/odata-version-2-0/uri-conventions/
-                string url = string.Empty;
+                string url = null;
 
-                // We used to rely on expressions such as &$filter=Version ge '9.0.1' to find versions in a range, but the results were sorted alphabetically. This
-                // caused version 10.0.0 to be less than version 9.0.0. In order to work around this issue, we'll request all versions and perform filtering ourselves.
-
-                url = string.Format("{0}FindPackagesById()?$orderby=Version asc&id='{1}'", ExpandedPath, package.Id);
+                if (ProtocolVersion == 2)
+                {
+                    // See here: http://www.odata.org/documentation/odata-version-2-0/uri-conventions/
+                    url = string.Format("{0}FindPackagesById()?id='{1}&$orderby=Id desc'", ExpandedPath, package.Id);
+                }
+                else
+                {
+                    url = string.Format("{0}query?q={1}", ExpandedPath, package.Id);
+                }
+                
+                // Are we looking for a specific package?
+                if (!package.HasVersionRange)
+                {
+                    if (ProtocolVersion == 2)
+                    {
+                        url = string.Format("{0}&$filter=Version eq '{1}'", url, package.Version);
+                    }
+                }
 
                 try
                 {
                     foundPackages = GetPackagesFromUrl(url, UserName, ExpandedPassword);
                 }
-                catch (System.Exception e)
+                catch (Exception e)
                 {
                     foundPackages = new List<NugetPackage>();
                     Debug.LogErrorFormat("Unable to retrieve package list from {0}\n{1}", url, e.ToString());
-                }
-
-                foundPackages.Sort();
-                if (foundPackages.Exists(p => package.InRange(p)))
-                {
-                    // Return all the packages in the range of versions specified by 'package'.
-                    foundPackages.RemoveAll(p => !package.InRange(p));
-                }
-                else
-                {
-                    // There are no packages in the range of versions specified by 'package'.
-                    // Return the most recent version after the version specified by 'package'.
-                    foundPackages.RemoveAll(p => package.CompareVersion(p.Version) < 0);
-                    if (foundPackages.Count > 0)
-                    {
-                        foundPackages.RemoveRange(1, foundPackages.Count - 1);
-                    }
                 }
             }
 
             if (foundPackages != null)
             {
+                // Return all the packages in the range of versions specified by 'package'.
+                foundPackages.RemoveAll(p => !package.InRange(p));
+                foundPackages.Sort();
+
                 foreach (NugetPackage foundPackage in foundPackages)
                 {
                     foundPackage.PackageSource = this;
@@ -176,13 +185,68 @@
 
         /// <summary>
         /// Gets a NugetPackage from the NuGet server that matches (or is in range of) the <see cref="NugetPackageIdentifier"/> given.
-        /// If an exact match isn't found, it selects the next closest version available.
         /// </summary>
         /// <param name="package">The <see cref="NugetPackageIdentifier"/> containing the ID and Version of the package to get.</param>
         /// <returns>The retrieved package, if there is one.  Null if no matching package was found.</returns>
         public NugetPackage GetSpecificPackage(NugetPackageIdentifier package)
         {
-            return FindPackagesById(package).FirstOrDefault();
+            if (ProtocolVersion == 2)
+            {
+                if (package.HasVersionRange)
+                {
+                    return FindPackagesById(package).FirstOrDefault();
+                }
+            }
+
+            if (IsLocalPath)
+            {
+                string localPackagePath = Path.Combine(ExpandedPath, string.Format("./{0}.{1}.nupkg", package.Id, package.Version));
+                if (File.Exists(localPackagePath))
+                {
+                    NugetPackage localPackage = NugetPackage.FromNupkgFile(localPackagePath);
+                    return localPackage;
+                }
+                else
+                {
+                    return null;
+                }
+            }
+            else
+            {
+                string url;
+                if (ProtocolVersion == 2)
+                {
+                    url = string.Format("{0}Packages(Id='{1}',Version='{2},$orderby=Id desc')", ExpandedPath, package.Id, package.Version);
+                }
+                else
+                {
+                    if (Name.Contains("Nuget"))
+                    {
+                        url = string.Format("{0}query?q={1}", ExpandedPath, package.Id);
+                    }
+                    else
+                    { 
+                        url = string.Format("{0}{1}/{2}.json", ExpandedPath, package.Id, package.MinimumVersion);
+                    }
+                }
+
+                try
+                {
+                    if (ProtocolVersion == 2 || Name.Contains("Nuget"))
+                    {
+                        return GetPackagesFromUrl(url, UserName, ExpandedPassword).First();
+                    }
+                    else
+                    {
+                        return GetPackagesFromExplicitUrl(url, UserName, ExpandedPassword).First();
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.LogErrorFormat("Unable to retrieve package from {0}\n{1}", url, e.ToString());
+                    return null;
+                }
+            }
         }
 
         /// <summary>
@@ -208,41 +272,56 @@
 
             string url = ExpandedPath;
 
-            // call the search method
-            url += "Search()?";
+            if(ProtocolVersion == 2)
+            {
+                // call the search method
+                url += "Search()?";
+            }
+            else
+            {
+                url = string.Format("{0}query?q={1}", url, string.IsNullOrEmpty(searchTerm) ? "gx42" : searchTerm);
+            }
 
             // filter results
             if (!includeAllVersions)
             {
-                if (!includePrerelease)
+                if (ProtocolVersion == 2)
                 {
-                    url += "$filter=IsLatestVersion&";
+                    if (!includePrerelease)
+                    {
+                        url += "$filter=IsLatestVersion&";
+                    }
+                    else
+                    {
+                        url += "$filter=IsAbsoluteLatestVersion&";
+                    }
                 }
                 else
                 {
-                    url += "$filter=IsAbsoluteLatestVersion&";
+                    url = string.Format("{0}&prerelease={1}", url, includePrerelease);
                 }
             }
 
-            // order results
-            //url += "$orderby=Id&";
-            //url += "$orderby=LastUpdated&";
-            url += "$orderby=DownloadCount desc&";
-
             // skip a certain number of entries
-            url += string.Format("$skip={0}&", numberToSkip);
+            url = string.Format("{0}&skip={1}", url, numberToSkip);
 
-            // show a certain number of entries
-            url += string.Format("$top={0}&", numberToGet);
+            if (ProtocolVersion == 2)
+            {
+                // order results
+                url += "$orderby=DownloadCount desc&";
+            
+                // show a certain number of entries
+                url += string.Format("$top={0}&", numberToGet);
 
-            // apply the search term
-            url += string.Format("searchTerm='{0}'&", searchTerm);
+                // apply the search term
+                url += string.Format("searchTerm='{0}'&", searchTerm);
 
-            // apply the target framework filters
-            url += "targetFramework=''&";
+                // apply the target framework filters
+                url += "targetFramework=''&";
 
-            // should we include prerelease packages?
-            url += string.Format("includePrerelease={0}", includePrerelease.ToString().ToLower());
+                // should we include prerelease packages?
+                url += string.Format("includePrerelease={0}", includePrerelease.ToString().ToLower());
+            }
 
             try
             {
@@ -351,14 +430,134 @@
             // add anonymous handler
             ServicePointManager.ServerCertificateValidationCallback += (sender, certificate, chain, policyErrors) => true;
 
-            Stream responseStream = NugetHelper.RequestUrl(url, username, password, timeOut: 5000);
-            StreamReader streamReader = new StreamReader(responseStream);
-
-            packages = NugetODataResponse.Parse(XDocument.Load(streamReader));
-
-            foreach (var package in packages)
+            using (Stream responseStream = NugetHelper.RequestUrl(url, username, password, timeOut: 5000))
             {
-                package.PackageSource = this;
+                if(responseStream == null)
+                {
+                    return packages;
+                }
+
+                if (ProtocolVersion == 2)
+                {
+                    using (StreamReader streamReader = new StreamReader(responseStream))
+                    {
+                        packages = NugetODataResponse.Parse(XDocument.Load(streamReader));
+                        foreach (var package in packages)
+                        {
+                            package.PackageSource = this;
+                        }
+                    }
+                }
+                else
+                {
+                    DataContractJsonSerializer ser = new DataContractJsonSerializer(typeof(NugetJsonResponse));
+                    NugetJsonResponse response = ser.ReadObject(responseStream) as NugetJsonResponse;
+
+                    for(int i = 0; i < response.Data.Length; ++i)
+                    {
+                        // TODO: Check if deps is null and get them
+
+                        NugetPackage package = response.Data[i].ToNugetPackage();
+                        package.PackageSource = this;
+
+                        if (!string.IsNullOrEmpty(response.Data[i].IconUrl))
+                        {
+                            package.Icon = NugetHelper.DownloadImage(response.Data[i].IconUrl);
+                        }
+
+                        // Get actual downloadUrl
+                        Stream catalogStream = NugetHelper.RequestUrl(package.DownloadUrl, username, password, timeOut: 5000);
+
+                        if (package.DownloadUrl.Contains("github.com"))
+                        {
+                            ser = new DataContractJsonSerializer(typeof(NugetPackageCatalog<CatalogEntry>));
+                            NugetPackageCatalog<CatalogEntry> catalog = ser.ReadObject(catalogStream) as NugetPackageCatalog<CatalogEntry>; 
+                            package.DownloadUrl = catalog.PackageContent;
+                        }
+                        else
+                        {
+                            ser = new DataContractJsonSerializer(typeof(NugetPackageCatalog<string>));
+                            NugetPackageCatalog<string> catalog = ser.ReadObject(catalogStream) as NugetPackageCatalog<string>;
+
+                            if(package.Dependencies.Count == 0 && catalog.CatalogEntry.GetType() == typeof(string))
+                            {
+                                // TODO: Pull the dependencies from the catalog.CatalogEntry
+                                Stream c = NugetHelper.RequestUrl(catalog.CatalogEntry, username, password, timeOut: 5000);
+
+                                ser = new DataContractJsonSerializer(typeof(NugetCatalogEntry));
+                                NugetCatalogEntry cat = ser.ReadObject(c) as NugetCatalogEntry;
+
+                                NugetPackageCatalog<NugetCatalogEntry> newCatalog = new NugetPackageCatalog<NugetCatalogEntry>()
+                                {
+                                    Id = catalog.Id,
+                                    PackageContent = catalog.PackageContent
+                                };
+
+                                newCatalog.CatalogEntry = cat;
+
+                                package.Dependencies = cat.ToFrameworkGroups();
+                            }
+
+                            package.DownloadUrl = catalog.PackageContent;
+                        }
+
+                        packages.Add(package);
+                    }
+                }
+            }
+
+            stopwatch.Stop();
+            NugetHelper.LogVerbose("Retreived {0} packages in {1} ms", packages.Count, stopwatch.ElapsedMilliseconds);
+
+            return packages;
+        }
+
+        private List<NugetPackage> GetPackagesFromExplicitUrl(string url, string username, string password)
+        {
+            NugetHelper.LogVerbose("Getting packages from: {0}", url);
+
+            Stopwatch stopwatch = new Stopwatch();
+            stopwatch.Start();
+
+            List<NugetPackage> packages = new List<NugetPackage>();
+
+            // Mono doesn't have a Certificate Authority, so we have to provide all validation manually.  Currently just accept anything.
+            // See here: http://stackoverflow.com/questions/4926676/mono-webrequest-fails-with-https
+
+            // remove all handlers
+            ServicePointManager.ServerCertificateValidationCallback = null;
+
+            // add anonymous handler
+            ServicePointManager.ServerCertificateValidationCallback += (sender, certificate, chain, policyErrors) => true;
+
+            using (Stream responseStream = NugetHelper.RequestUrl(url, username, password, timeOut: 5000))
+            {
+                if(responseStream == null)
+                {
+                    return packages;
+                }
+
+                if (ProtocolVersion == 2)
+                {
+                    using (StreamReader streamReader = new StreamReader(responseStream))
+                    {
+                        packages = NugetODataResponse.Parse(XDocument.Load(streamReader));
+                        foreach (var package in packages)
+                        {
+                            package.PackageSource = this;
+                        }
+                    }
+                }
+                else
+                {
+                    DataContractJsonSerializer ser = new DataContractJsonSerializer(typeof(NugetPackageCatalog<CatalogEntry>));
+                    NugetPackageCatalog<CatalogEntry> catalog = ser.ReadObject(responseStream) as NugetPackageCatalog<CatalogEntry>;
+
+                    NugetPackage package = catalog.CatalogEntry.ToNugetPackage();
+                    package.PackageSource = this;
+
+                    packages.Add(package);
+                }
             }
 
             stopwatch.Stop();
@@ -465,17 +664,11 @@
                 }
             }
 
-            // sort alphabetically
+            // sort alphabetically, then by version descending
             updates.Sort(delegate (NugetPackage x, NugetPackage y)
             {
-                if (x.Id == null && y.Id == null)
-                    return 0;
-                else if (x.Id == null)
-                    return -1;
-                else if (y.Id == null)
-                    return 1;
-                else if (x.Id == y.Id)
-                    return x.Version.CompareTo(y.Version);
+                if (x.Id == y.Id)
+                    return -1 * x.CompareVersion(y.Version);
                 else
                     return x.Id.CompareTo(y.Id);
             });
@@ -535,27 +728,25 @@
         /// <returns>A list of all updates available.</returns>
         private List<NugetPackage> GetUpdatesFallback(IEnumerable<NugetPackage> installedPackages, bool includePrerelease = false, bool includeAllVersions = false, string targetFrameworks = "", string versionContraints = "")
         {
+            Stopwatch stopwatch = new Stopwatch();
+            stopwatch.Start();
             Debug.Assert(string.IsNullOrEmpty(targetFrameworks) && string.IsNullOrEmpty(versionContraints)); // These features are not supported by this version of GetUpdates.
 
             List<NugetPackage> updates = new List<NugetPackage>();
             foreach (NugetPackage installedPackage in installedPackages)
             {
-                List<NugetPackage> packageUpdates = new List<NugetPackage>();
                 string versionRange = string.Format("({0},)", installedPackage.Version); // Minimum of Current ID (exclusive) with no maximum (exclusive).
-                NugetPackageIdentifier id = new NugetPackageIdentifier(installedPackage.Id, versionRange); 
-                packageUpdates = FindPackagesById(id);
+                NugetPackageIdentifier id = new NugetPackageIdentifier(installedPackage.Id, versionRange);
+                List<NugetPackage> packageUpdates = FindPackagesById(id);
 
-                NugetPackage mostRecentPrerelease = includePrerelease ? packageUpdates.FindLast(p => p.IsPrerelease) : default(NugetPackage);
-                packageUpdates.RemoveAll(p => p.IsPrerelease && p != mostRecentPrerelease);
+                if (!includePrerelease) { packageUpdates.RemoveAll(p => p.IsPrerelease); }
+                if( packageUpdates.Count == 0 ) { continue; }
 
-                if (!includeAllVersions && packageUpdates.Count > 0)
-                {
-                    packageUpdates.RemoveRange(0, packageUpdates.Count - 1);
-                }
-
-                updates.AddRange(packageUpdates);
+                int skip = includeAllVersions ? 0 : packageUpdates.Count - 1;
+                updates.AddRange(packageUpdates.Skip(skip));
             }
 
+            NugetHelper.LogVerbose("NugetPackageSource.GetUpdatesFallback took {0} ms", stopwatch.ElapsedMilliseconds);
             return updates;
         }
     }
