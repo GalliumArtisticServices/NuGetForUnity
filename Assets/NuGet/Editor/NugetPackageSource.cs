@@ -232,13 +232,76 @@
 
                 try
                 {
+                    Version minVer = new Version(package.MinimumVersion);
+                    NugetPackage r = null;
+
                     if (ProtocolVersion == 2 || Name.Contains("Nuget"))
                     {
-                        return GetPackagesFromUrl(url, UserName, ExpandedPassword).First();
+                        List<NugetPackage> packages = GetPackagesFromUrl(url, UserName, ExpandedPassword);
+                        for(int i = 0; i < packages.Count; ++i)
+                        {
+                            if(!packages[i].Id.Equals(package.Id))
+                            {
+                                continue;
+                            }
+
+                            Version pkgVer = new Version(packages[i].MinimumVersion);
+                            
+                            if(pkgVer == minVer)
+                            {
+                                return packages[i];
+                            }
+                            else if (pkgVer > minVer)
+                            {
+                                // Closest match
+                                r = packages[i];
+                            }
+                        }
+
+                        if (r != null)
+                        {
+                            Debug.LogWarning("Unable to find exact version match.");
+                        }
+                        else
+                        {
+                            Debug.LogError("Unable to find version");
+                        }
+
+                        return r;
                     }
                     else
                     {
-                        return GetPackagesFromExplicitUrl(url, UserName, ExpandedPassword).First();
+                        List<NugetPackage> packages = GetPackagesFromExplicitUrl(url, UserName, ExpandedPassword);
+                        for (int i = 0; i < packages.Count; ++i)
+                        {
+                            if (!packages[i].Id.Equals(package.Id))
+                            {
+                                continue;
+                            }
+
+                            Version pkgVer = new Version(packages[i].MinimumVersion);
+
+                            if (pkgVer == minVer)
+                            {
+                                return packages[i];
+                            }
+                            else if (pkgVer > minVer)
+                            {
+                                // Closest match
+                                r = packages[i];
+                            }
+                        }
+
+                        if (r != null)
+                        {
+                            Debug.LogWarning("Unable to find exact version match.");
+                        }
+                        else
+                        {
+                            Debug.LogError("Unable to find version");
+                        }
+
+                        return r;
                     }
                 }
                 catch (Exception e)
@@ -455,8 +518,6 @@
 
                     for(int i = 0; i < response.Data.Length; ++i)
                     {
-                        // TODO: Check if deps is null and get them
-
                         NugetPackage package = response.Data[i].ToNugetPackage();
                         package.PackageSource = this;
 
