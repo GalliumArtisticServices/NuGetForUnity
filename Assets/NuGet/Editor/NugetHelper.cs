@@ -994,7 +994,7 @@
         {
             LogVerbose("Updating {0} {1} to {2}", currentVersion.Id, currentVersion.Version, newVersion.Version);
             Uninstall(currentVersion, false);
-            return InstallIdentifier(newVersion, refreshAssets);
+            return InstallIdentifier(newVersion, false, refreshAssets);
         }
 
         /// <summary>
@@ -1284,9 +1284,9 @@
         /// </summary>
         /// <param name="package">The identifer of the package to install.</param>
         /// <param name="refreshAssets">True to refresh the Unity asset database.  False to ignore the changes (temporarily).</param>
-        internal static bool InstallIdentifier(NugetPackageIdentifier package, bool refreshAssets = true)
+        internal static bool InstallIdentifier(NugetPackageIdentifier package, bool force = false, bool refreshAssets = true)
         {
-            if (IsAlreadyImportedInEngine(package))
+            if (!force && IsAlreadyImportedInEngine(package))
             {
                 LogVerbose("Package {0} is already imported in engine, skipping install.", package);
                 return true;
@@ -1297,14 +1297,14 @@
                 NugetPackage pkg = (NugetPackage)package;
                 if (!string.IsNullOrEmpty(pkg.DownloadUrl))
                 {
-                    return Install(pkg, refreshAssets);
+                    return Install(pkg, force, refreshAssets);
                 }
             }
 
             NugetPackage foundPackage = GetSpecificPackage(package);
             if (foundPackage != null)
             {
-                return Install(foundPackage, refreshAssets);
+                return Install(foundPackage, force, refreshAssets);
             }
             else
             {
@@ -1344,9 +1344,9 @@
         /// </summary>
         /// <param name="package">The package to install.</param>
         /// <param name="refreshAssets">True to refresh the Unity asset database.  False to ignore the changes (temporarily).</param>
-        public static bool Install(NugetPackage package, bool refreshAssets = true)
+        public static bool Install(NugetPackage package, bool force = false, bool refreshAssets = true)
         {
-            if (IsAlreadyImportedInEngine(package))
+            if (!force && IsAlreadyImportedInEngine(package))
             {
                 LogVerbose("Package {0} is already imported in engine, skipping install.", package);
                 return true;
@@ -1653,7 +1653,7 @@ PluginImporter:
             }
             catch (Exception e)
             {
-                Debug.LogException(e);
+                Debug.LogWarning(e);
 
                 return null;
             }
@@ -1688,7 +1688,7 @@ PluginImporter:
                         if (!IsInstalled(package))
                         {
                             LogVerbose("---Restoring {0} {1}", package.Id, package.Version);
-                            InstallIdentifier(package);
+                            InstallIdentifier(package, true); // Force assets in the config
                         }
                         else
                         {
