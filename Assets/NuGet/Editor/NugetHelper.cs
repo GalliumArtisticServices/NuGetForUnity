@@ -25,8 +25,6 @@
     [InitializeOnLoad]
     public static class NugetHelper
     {
-        const string GLOBAL_CONFIG_PATH_NUGET = ".nuget/NuGet/NuGet.Config";
-
         private static bool insideInitializeOnLoad = false;
 
         /// <summary>
@@ -204,7 +202,10 @@
                 // Add packages from global NuGet config
                 string userPath = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
 
-                string globalConfigPathNuget = Path.Combine(userPath, GLOBAL_CONFIG_PATH_NUGET);
+                string globalConfigPathNuget = Path.Combine(userPath, ".nuget", "NuGet", "NuGet.Config");
+
+                Debug.Log("Going to load Global Nuget config from: " + globalConfigPathNuget);
+
                 bool globalExists = File.Exists(globalConfigPathNuget);
                 if (globalExists)
                 {
@@ -628,6 +629,7 @@
                 Path.Combine(Directory.GetParent(executablePath).FullName, "Data")
             };
             var relativePaths = new[] {
+                //Path.Combine("NetCore"), // TIM: Should we include this?
                 Path.Combine("NetStandard",  "compat"),
                 Path.Combine("MonoBleedingEdge", "lib", "mono")
             };
