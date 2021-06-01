@@ -5,6 +5,7 @@
     /// <summary>
     /// Represents an identifier for a NuGet package.  It contains only an ID and a Version number.
     /// </summary>
+    [Serializable]
     public class NugetPackageIdentifier : IEquatable<NugetPackageIdentifier>, IComparable<NugetPackageIdentifier>
     {
         /// <summary>
@@ -45,14 +46,14 @@
         /// <summary>
         /// Gets the maximum version number of the NuGet package. Only valid when HasVersionRange is true.
         /// </summary>
-        public string MaximumVersion 
+        public string MaximumVersion
         {
-            get 
+            get
             {
                 // if there is no MaxVersion specified, but the Max is Inclusive, then it is an EXACT version match with the stored MINIMUM
                 string[] minMax = Version.TrimStart(new[] { '[', '(' }).TrimEnd(new[] { ']', ')' }).Split(new[] { ',' });
-                return minMax.Length == 2 ? minMax[1].Trim() : null; 
-            } 
+                return minMax.Length == 2 ? minMax[1].Trim() : null;
+            }
         }
 
         /// <summary>

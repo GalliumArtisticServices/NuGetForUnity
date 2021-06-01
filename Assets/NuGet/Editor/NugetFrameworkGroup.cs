@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace NugetForUnity
 {
@@ -6,6 +7,7 @@ namespace NugetForUnity
     /// Represents a grouping of items by framework type and version.
     /// This could be a group of package dependencies, or a group of package references.
     /// </summary>
+    [Serializable]
     public class NugetFrameworkGroup
     {
         public NugetFrameworkGroup()
