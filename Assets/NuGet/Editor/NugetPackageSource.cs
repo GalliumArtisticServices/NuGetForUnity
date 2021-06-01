@@ -147,7 +147,7 @@
                 {
                     url = string.Format("{0}query?q={1}", ExpandedPath, package.Id);
                 }
-                
+
                 // Are we looking for a specific package?
                 if (!package.HasVersionRange)
                 {
@@ -225,84 +225,46 @@
                         url = string.Format("{0}query?q={1}", ExpandedPath, package.Id);
                     }
                     else
-                    { 
-                        url = string.Format("{0}{1}/{2}.json", ExpandedPath, package.Id, package.MinimumVersion);
+                    {
+                        url = string.Format("{0}{1}/{2}.json", ExpandedPath, package.Id, package.HasVersionRange ? package.MinimumVersion : package.Version);
                     }
                 }
 
                 try
                 {
-                    Version minVer = new Version(package.MinimumVersion);
+                    Version minVer = new Version(package.HasVersionRange ? package.MinimumVersion : package.Version);
                     NugetPackage r = null;
-
+                    List<NugetPackage> packages = new List<NugetPackage>();
                     if (ProtocolVersion == 2 || Name.Contains("Nuget"))
                     {
-                        List<NugetPackage> packages = GetPackagesFromUrl(url, UserName, ExpandedPassword);
-                        for(int i = 0; i < packages.Count; ++i)
-                        {
-                            if(!packages[i].Id.Equals(package.Id))
-                            {
-                                continue;
-                            }
-
-                            Version pkgVer = new Version(packages[i].MinimumVersion);
-                            
-                            if(pkgVer == minVer)
-                            {
-                                return packages[i];
-                            }
-                            else if (pkgVer > minVer)
-                            {
-                                // Closest match
-                                r = packages[i];
-                            }
-                        }
-
-                        if (r != null)
-                        {
-                            Debug.LogWarning("Unable to find exact version match.");
-                        }
-                        else
-                        {
-                            Debug.LogError("Unable to find version");
-                        }
-
-                        return r;
+                        packages = GetPackagesFromUrl(url, UserName, ExpandedPassword);
                     }
                     else
                     {
-                        List<NugetPackage> packages = GetPackagesFromExplicitUrl(url, UserName, ExpandedPassword);
-                        for (int i = 0; i < packages.Count; ++i)
-                        {
-                            if (!packages[i].Id.Equals(package.Id))
-                            {
-                                continue;
-                            }
-
-                            Version pkgVer = new Version(packages[i].MinimumVersion);
-
-                            if (pkgVer == minVer)
-                            {
-                                return packages[i];
-                            }
-                            else if (pkgVer > minVer)
-                            {
-                                // Closest match
-                                r = packages[i];
-                            }
-                        }
-
-                        if (r != null)
-                        {
-                            Debug.LogWarning("Unable to find exact version match.");
-                        }
-                        else
-                        {
-                            Debug.LogError("Unable to find version");
-                        }
-
-                        return r;
+                        packages = GetPackagesFromExplicitUrl(url, UserName, ExpandedPassword);
                     }
+
+                    for (int i = 0; i < packages.Count; ++i)
+                    {
+                        if (!packages[i].Id.Equals(package.Id))
+                        {
+                            continue;
+                        }
+
+
+                        if (packages[i].HasVersionRange)
+                        {
+                            Debug.LogWarningFormat("Attempting to compare Version with a version range. This may have unexpected behavior!\nRequested Package: {0}\n Requested Version: {1}\nFound Version Range: {2}", package.Id, package.Version, packages[i].Version);
+                        }
+
+                        if (package.InRange(packages[i]))
+                        {
+                            return packages[i];
+                        }
+                    }
+
+                    Debug.LogError("Unable to find version within range");
+                    return null;
                 }
                 catch (Exception e)
                 {
@@ -335,7 +297,7 @@
 
             string url = ExpandedPath;
 
-            if(ProtocolVersion == 2)
+            if (ProtocolVersion == 2)
             {
                 // call the search method
                 url += "Search()?";
@@ -372,7 +334,7 @@
             {
                 // order results
                 url += "$orderby=DownloadCount desc&";
-            
+
                 // show a certain number of entries
                 url += string.Format("$top={0}&", numberToGet);
 
@@ -495,7 +457,7 @@
 
             using (Stream responseStream = NugetHelper.RequestUrl(url, username, password, timeOut: 5000))
             {
-                if(responseStream == null)
+                if (responseStream == null)
                 {
                     return packages;
                 }
@@ -516,7 +478,7 @@
                     DataContractJsonSerializer ser = new DataContractJsonSerializer(typeof(NugetJsonResponse));
                     NugetJsonResponse response = ser.ReadObject(responseStream) as NugetJsonResponse;
 
-                    for(int i = 0; i < response.Data.Length; ++i)
+                    for (int i = 0; i < response.Data.Length; ++i)
                     {
                         NugetPackage package = response.Data[i].ToNugetPackage();
                         package.PackageSource = this;
@@ -532,7 +494,7 @@
                         if (package.DownloadUrl.Contains("github.com"))
                         {
                             ser = new DataContractJsonSerializer(typeof(NugetPackageCatalog<CatalogEntry>));
-                            NugetPackageCatalog<CatalogEntry> catalog = ser.ReadObject(catalogStream) as NugetPackageCatalog<CatalogEntry>; 
+                            NugetPackageCatalog<CatalogEntry> catalog = ser.ReadObject(catalogStream) as NugetPackageCatalog<CatalogEntry>;
                             package.DownloadUrl = catalog.PackageContent;
                         }
                         else
@@ -540,7 +502,7 @@
                             ser = new DataContractJsonSerializer(typeof(NugetPackageCatalog<string>));
                             NugetPackageCatalog<string> catalog = ser.ReadObject(catalogStream) as NugetPackageCatalog<string>;
 
-                            if(package.Dependencies.Count == 0 && catalog.CatalogEntry.GetType() == typeof(string))
+                            if (package.Dependencies.Count == 0 && catalog.CatalogEntry.GetType() == typeof(string))
                             {
                                 // TODO: Pull the dependencies from the catalog.CatalogEntry
                                 Stream c = NugetHelper.RequestUrl(catalog.CatalogEntry, username, password, timeOut: 5000);
@@ -593,7 +555,7 @@
 
             using (Stream responseStream = NugetHelper.RequestUrl(url, username, password, timeOut: 5000))
             {
-                if(responseStream == null)
+                if (responseStream == null)
                 {
                     return packages;
                 }
@@ -801,7 +763,7 @@
                 List<NugetPackage> packageUpdates = FindPackagesById(id);
 
                 if (!includePrerelease) { packageUpdates.RemoveAll(p => p.IsPrerelease); }
-                if( packageUpdates.Count == 0 ) { continue; }
+                if (packageUpdates.Count == 0) { continue; }
 
                 int skip = includeAllVersions ? 0 : packageUpdates.Count - 1;
                 updates.AddRange(packageUpdates.Skip(skip));

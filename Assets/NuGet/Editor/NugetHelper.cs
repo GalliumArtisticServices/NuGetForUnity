@@ -1237,7 +1237,8 @@
                     continue;
                 }
 
-                if (foundPackage.Version == packageId.MinimumVersion)
+                string versionCheck = packageId.HasVersionRange ? packageId.MinimumVersion : packageId.Version;
+                if (foundPackage.Version == versionCheck)
                 {
                     LogVerbose("{0} {1} was found in {2}", foundPackage.Id, foundPackage.Version, source.Name);
                     return foundPackage;
@@ -1393,7 +1394,7 @@
                 foreach (var dependency in frameworkGroup.Dependencies)
                 {
                     LogVerbose("Installing Dependency: {0} {1}", dependency.Id, dependency.Version);
-                    bool installed = InstallIdentifier(dependency);
+                    bool installed = InstallIdentifier(dependency, force, refreshAssets);
                     if (!installed)
                     {
                         throw new Exception(string.Format("Failed to install dependency: {0} {1}.", dependency.Id, dependency.Version));
@@ -1690,7 +1691,7 @@ PluginImporter:
                         if (!IsInstalled(package))
                         {
                             LogVerbose("---Restoring {0} {1}", package.Id, package.Version);
-                            InstallIdentifier(package, true); // Force assets in the config
+                            InstallIdentifier(package, false, false); // Force assets in the config
                         }
                         else
                         {
@@ -1722,6 +1723,13 @@ PluginImporter:
             if (!Directory.Exists(LocalNugetConfigFile.RepositoryPath))
             {
                 return;
+            }
+
+            // TODO: DEBUG
+            LogVerbose("Checking for unnecessary packages. Listing necessary packages from config file:");
+            foreach (NugetPackageIdentifier packageId in PackagesConfigFile.Packages)
+            {
+                LogVerbose("Necessary: {0} - {1}", packageId.Id, packageId.Version);
             }
 
             string[] directories = Directory.GetDirectories(LocalNugetConfigFile.RepositoryPath, "*", SearchOption.TopDirectoryOnly);
