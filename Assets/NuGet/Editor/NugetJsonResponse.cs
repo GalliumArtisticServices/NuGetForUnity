@@ -20,7 +20,7 @@ namespace NugetForUnity
 
         public NugetFrameworkGroup ToNugetFrameworkGroup()
         {
-            if(TargetFramework == null)
+            if (TargetFramework == null)
             {
                 // Hack for malformed Dep Groups
                 TargetFramework = "unity"; //".NETStandard2.0";
@@ -134,9 +134,20 @@ namespace NugetForUnity
         public NugetPackage ToNugetPackage()
         {
             List<NugetFrameworkGroup> groups = new List<NugetFrameworkGroup>();
-            for(int i = 0; i < DependencyGroups?.Length; ++i)
+            for (int i = 0; i < DependencyGroups?.Length; ++i)
             {
                 groups.Add(DependencyGroups[i].ToNugetFrameworkGroup());
+            }
+
+            string versionURL = string.Empty;
+            for (int i = 0; i < Versions.Length; ++i)
+            {
+                VersionData vd = Versions[i];
+                if (vd.Version == Version)
+                {
+                    versionURL = vd.Url;
+                    break;
+                }
             }
 
             return new NugetPackage()
@@ -147,7 +158,7 @@ namespace NugetForUnity
                 Description = Description,
                 Summary = Summary,
                 LicenseUrl = LicenseUrl,
-                DownloadUrl = Versions[Versions.Length - 1].Url,
+                DownloadUrl = versionURL,
                 DownloadCount = TotalDownloads,
                 Dependencies = groups
             };
@@ -193,7 +204,7 @@ namespace NugetForUnity
 
         [DataMember(Name = "packageContent", IsRequired = false)]
         public string PackageContent { get; set; }
-       
+
         [DataMember(Name = "copyright", IsRequired = false)]
         public string Copyright { get; set; }
 
